@@ -1,5 +1,6 @@
 """Run against compose.test.yml: uv run python tests/integration/browser_check.py."""
 
+import json
 import time
 from pathlib import Path
 
@@ -32,12 +33,21 @@ def main() -> None:
         expect(panel.locator(".ai-answer a")).to_have_count(2)
         expect(page.locator(".ai-prototype-switcher")).to_have_count(0)
         expect(panel.locator("h2")).to_have_text("✦AI Summary")
+        expect(panel.locator(".ai-provenance")).to_have_text("Based on search snippets")
+        expect(panel.locator(".ai-more")).to_be_visible()
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
-        panel.get_by_role("button", name="More", exact=False).click()
+        panel.get_by_role("button", name="More", exact=True).click()
         expect(panel.locator(".ai-follow-up")).to_be_visible()
-        panel.get_by_role("button", name="Less", exact=False).click()
-        panel.locator(".ai-source-pills button").first.click()
-        expect(panel.locator(".ai-follow-up")).to_be_visible()
+        panel.get_by_role("button", name="Less", exact=True).click()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        panel.get_by_role("button", name="More", exact=True).click()
+        panel.get_by_label("Ask a follow-up").focus()
+        page.keyboard.press("Escape")
+        expect(panel.get_by_label("Ask a follow-up")).to_be_focused()
+        page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        panel.get_by_role("button", name="Copy answer").click()
+        expect(panel.locator(".ai-copy-status")).to_have_text("Answer copied.")
+        assert "[1]" in page.evaluate("navigator.clipboard.readText()")
         expect(page.locator("#urls .result")).to_have_count(2)
         panel.locator(".ai-answer a").first.click()
         expect(panel.locator(".ai-sources").first).to_have_attribute("open", "")
@@ -49,6 +59,7 @@ def main() -> None:
         panel.get_by_role("button", name="Ask", exact=True).click()
         expect(panel.locator(".ai-answer")).to_have_count(2)
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel.get_by_label("Ask a follow-up")).to_be_focused()
         assert panel.locator(".ai-answer a").first.get_attribute("href") == first_href
         picker = panel.get_by_label("Overview model")
         expect(picker).to_be_hidden()
@@ -96,7 +107,8 @@ def main() -> None:
             panel.get_by_role("button", name="Regenerate overview").click()
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
-        panel.locator(".ai-more").click()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        panel.get_by_role("button", name="More", exact=True).click()
         expect(panel.locator(".ai-follow-up")).to_be_visible()
 
         # A failed model selection keeps the existing answer and reports the error.
@@ -139,6 +151,58 @@ def main() -> None:
         page.get_by_role("button", name="Stop", exact=True).click()
         expect(page.locator(".ai-status")).to_have_text("Stopped. This answer is incomplete.")
         expect(page.get_by_role("button", name="Retry")).to_be_visible()
+        # Long answers disclose on demand and on keyboard focus into citations.
+        long_answer = "Air scatters blue light more strongly than red light. " * 20 + "[1]"
+        stream = "".join(
+            f"event: {name}\ndata: {json.dumps(data)}\n\n"
+            for name, data in [
+                (
+                    "sources",
+                    {
+                        "sources": [
+                            {
+                                "id": 1,
+                                "url": "https://example.org/sky",
+                                "title": "Why the sky is blue",
+                                "snippet": "Blue light scatters.",
+                            }
+                        ]
+                    },
+                ),
+                ("text_delta", {"text": long_answer}),
+                ("done", {"token": "fixture", "can_follow_up": True}),
+            ]
+        )
+        page.route(
+            "**/ai-overview/stream",
+            lambda route: route.fulfill(
+                content_type="text/event-stream",
+                body=stream,
+            ),
+        )
+        page.goto("http://127.0.0.1:8899/search?q=long-answer%3F")
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel.get_by_role("button", name="More", exact=True)).to_be_visible()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        answer = panel.locator(".ai-answer")
+        assert answer.evaluate("el => el.scrollHeight > el.clientHeight")
+        panel.get_by_role("button", name="More", exact=True).click()
+        assert answer.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
+        panel.get_by_role("button", name="Less", exact=True).click()
+        answer.locator("a").focus()
+        expect(panel).to_have_attribute("data-expanded", "false")
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        assert answer.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
+        page.set_viewport_size({"width": 320, "height": 740})
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.emulate_media(reduced_motion="reduce")
+        panel.get_by_role("button", name="Overview options").click()
+        assert (
+            panel.locator(".ai-options").evaluate("el => getComputedStyle(el).animationName")
+            == "none"
+        )
+        page.keyboard.press("Escape")
+        expect(panel.get_by_role("button", name="Overview options")).to_be_focused()
         assert not errors, errors
         browser.close()
     print(

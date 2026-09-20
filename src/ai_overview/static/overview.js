@@ -71,16 +71,16 @@ export function renderCitations(element, text, sources) {
 }
 
 function sourceList(sources) {
+  sources = sources.filter(source => validURL(source.url));
   const details = document.createElement("details");
   details.className = "ai-sources";
   const summary = document.createElement("summary");
-  summary.textContent = `${sources.length} sources`;
+  summary.textContent = `${sources.length} ${sources.length === 1 ? "source" : "sources"}`;
   const domains = document.createElement("span");
-  domains.textContent = [...new Set(sources.filter(s => validURL(s.url)).map(s => new URL(s.url).hostname.replace(/^www\./, "")))].slice(0, 2).join(" · ");
+  domains.textContent = [...new Set(sources.map(s => new URL(s.url).hostname.replace(/^www\./, "")))].slice(0, 2).join(", ");
   summary.append(domains);
   const list = document.createElement("ol");
   for (const source of sources) {
-    if (!validURL(source.url)) continue;
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = source.url;
@@ -126,14 +126,25 @@ function mount(panel) {
   let expanded = false;
   function expand(value) {
     expanded = value;
+    if (!value) turns.querySelectorAll(".ai-answer-revealed").forEach(answer => answer.classList.remove("ai-answer-revealed"));
     panel.dataset.expanded = String(value);
     more.setAttribute("aria-expanded", String(value));
-    more.textContent = value ? "Less ⌃" : "More ⌄";
+    more.querySelector("span").textContent = value ? "Less" : "More";
     form.hidden = !canFollowUp || !expanded;
+  }
+  function updateDisclosure() {
+    moreRow.hidden = !turns.querySelector(".ai-answer")?.textContent && !canFollowUp;
   }
   more.addEventListener("click", () => expand(!expanded));
   copy.addEventListener("click", async () => {
-    const text = [...turns.querySelectorAll(".ai-answer")].map(answer => answer.textContent).join("\n\n");
+    const text = [...turns.querySelectorAll("article")].map(turn => {
+      const answer = turn.querySelector(".ai-answer").cloneNode(true);
+      answer.querySelectorAll("a[data-source-id]").forEach(link => {
+        link.replaceWith(`[${link.dataset.sourceId}]`);
+      });
+      const question = turn.querySelector(".ai-question")?.textContent;
+      return [question, answer.textContent].filter(Boolean).join("\n\n");
+    }).join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       copyStatus.textContent = "Answer copied.";
@@ -163,7 +174,10 @@ function mount(panel) {
     if (!options.contains(event.target) && !optionsToggle.contains(event.target)) closeOptions();
   });
   panel.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
+    // Keep the host's global Escape shortcut from moving focus to search.
+    if (event.key === "Escape") event.stopPropagation();
+    if (event.key === "Escape" && (!options.hidden || (settings && !settings.hidden))) {
+      event.preventDefault();
       closeOptions();
       if (settings) { settings.hidden = true; settingsToggle.setAttribute("aria-expanded", "false"); }
       optionsToggle.focus();
@@ -295,11 +309,11 @@ function mount(panel) {
     const content = panel.querySelector(".ai-content");
     content.hidden = !content.hidden;
     collapse.setAttribute("aria-expanded", String(!content.hidden));
-    collapse.textContent = content.hidden ? "⌄" : "⌃";
     collapse.setAttribute("aria-label", content.hidden ? "Expand overview" : "Collapse overview");
     collapse.title = content.hidden ? "Expand overview" : "Collapse overview";
     preview.hidden = !content.hidden;
     preview.textContent = turns.querySelector(".ai-answer")?.textContent || status.textContent;
+    if (!content.hidden) updateDisclosure();
   });
   stop.addEventListener("click", () => controller?.abort());
   window.addEventListener("pagehide", () => controller?.abort());
@@ -319,6 +333,7 @@ function mount(panel) {
       moreRow.hidden = true;
       copy.disabled = true;
     }
+    if (question) expand(true);
     copyStatus.textContent = "";
     controller = new AbortController();
     panel.dataset.loading = "true";
@@ -340,6 +355,7 @@ function mount(panel) {
     }
     const answer = document.createElement("div");
     answer.className = "ai-answer";
+    answer.addEventListener("focusin", () => answer.classList.add("ai-answer-revealed"));
     const turnStatus = document.createElement("p");
     turnStatus.className = "ai-turn-status";
     turnStatus.hidden = true;
@@ -351,7 +367,6 @@ function mount(panel) {
       const item = details?.querySelector(`li[data-source-id="${link.dataset.sourceId}"]`);
       if (!item) return;
       event.preventDefault();
-      expand(true);
       details.open = true;
       item.focus();
     });
@@ -373,29 +388,14 @@ function mount(panel) {
         if (event.name === "sources") {
           sources = event.data.sources;
           const details = sourceList(sources);
-          const pills = document.createElement("div");
-          pills.className = "ai-source-pills";
-          for (const source of sources.filter(source => validURL(source.url)).slice(0, 3)) {
-            const pill = document.createElement("button");
-            pill.type = "button";
-            pill.textContent = `› ${new URL(source.url).hostname.replace(/^www\./, "")}`;
-            pill.title = source.title;
-            pill.setAttribute("aria-label", `View source ${source.id}: ${source.title}`);
-            pill.addEventListener("click", () => {
-              expand(true);
-              details.open = true;
-              details.querySelector(`li[data-source-id="${source.id}"]`)?.focus();
-            });
-            pills.append(pill);
-          }
-          turn.append(pills, details);
+          if (details.querySelector("li")) turn.append(details);
         }
         if (event.name === "text_delta") {
           status.hidden = true;
-          moreRow.hidden = false;
           copy.disabled = false;
           text += event.data.text;
           renderCitations(answer, text, sources);
+          updateDisclosure();
           preview.textContent = turns.querySelector(".ai-answer")?.textContent || "";
         }
         if (event.name === "error") throw new Error(event.data.message);
@@ -427,6 +427,10 @@ function mount(panel) {
       form.hidden = !canFollowUp || !expanded;
       input.disabled = false;
       submit.disabled = false;
+      updateDisclosure();
+      if (question && !form.hidden && (document.activeElement === document.body || form.contains(document.activeElement))) {
+        input.focus();
+      }
       if (picker) {
         picker.disabled = loadingModels || !choices.length;
         reloadModels.disabled = loadingModels;
