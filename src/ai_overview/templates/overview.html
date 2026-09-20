@@ -7,7 +7,10 @@
   <header class="ai-overview-header">
     <h2><span class="ai-sparkle" aria-hidden="true">✦</span>AI Summary</h2>
     <div class="ai-header-actions">
-      <button type="button" class="ai-copy" aria-label="Copy answer" title="Copy answer" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button>
+      <div class="ai-generation-action">
+        <button type="button" class="ai-stop" aria-label="Stop generating" title="Stop generating" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+        <button type="button" class="ai-copy" aria-label="Copy answer" title="Copy answer" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button>
+      </div>
       <button type="button" class="ai-options-toggle" aria-label="Overview options" aria-expanded="false" title="Overview options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
       <button type="button" class="ai-collapse" aria-label="Collapse overview" aria-expanded="true" title="Collapse overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
     </div>
@@ -40,7 +43,6 @@
     <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false"><span>More</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
     <span class="ai-copy-status ai-sr-only" role="status"></span>
     <div class="ai-actions">
-      <button type="button" class="ai-stop" hidden>Stop</button>
       <button type="button" class="ai-retry" hidden>Retry</button>
     </div>
     <form class="ai-follow-up" hidden>
