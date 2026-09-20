@@ -1,0 +1,20 @@
+name: ai-overview-test
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    ports:
+      - "127.0.0.1:8899:8080"
+    environment:
+      FIXTURE_KEY: fixture-not-a-real-api-key
+    volumes:
+      - ./src/ai_overview:/usr/local/searxng/ai_overview:ro
+      - ./tests/integration/settings.yml:/etc/searxng/settings.yml:ro
+      - ./tests/integration/overview.yml:/etc/searxng/overview.yml:ro
+      - ./tests/integration/overview_fixture.py:/usr/local/searxng/searx/engines/overview_fixture.py:ro
+    depends_on:
+      - provider
+  provider:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    entrypoint: ["/usr/sbin/python", "/fixture/provider.py"]
+    volumes:
+      - ./tests/integration/provider.py:/fixture/provider.py:ro

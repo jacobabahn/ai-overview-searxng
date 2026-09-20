@@ -1,0 +1,49 @@
+# Copy to overview.yml, choose a default, and set the corresponding credential.
+# Model identifiers below are examples, not a claim of live compatibility.
+default_profile: ollama
+model_picker: false
+max_sources: 8
+evidence_bytes: 12000
+max_turns: 6
+token_ttl_seconds: 1800
+max_concurrent: 2
+
+profiles:
+  ollama:
+    backend: ollama
+    model: your-installed-model
+    endpoint: http://host.docker.internal:11434/api/chat
+    max_output_tokens: 1600
+    timeout_seconds: 120
+    read_timeout_seconds: 30
+    options:
+      num_ctx: 32768
+
+  local:
+    backend: local
+    model: your-loaded-model
+    endpoint: http://host.docker.internal:1234/v1/chat/completions
+
+  openai:
+    backend: openai
+    model: your-openai-model
+    api_key_env: OPENAI_API_KEY
+    # Uses Responses. Configure output/reasoning budgets for your model.
+
+  gemini:
+    backend: gemini
+    model: your-gemini-model
+    api_key_env: GEMINI_API_KEY
+
+  openrouter:
+    backend: openrouter
+    model: provider/model-id
+    api_key_env: OPENROUTER_API_KEY
+
+  opencode:
+    backend: opencode_go
+    model: deepseek-v4-flash
+    api_key_env: OPENCODE_GO_API_KEY
+    discover_models: true
+    # With model_picker: true, fetch models from the Go catalog.
+    # protocol: responses  # Select for Go models requiring the Responses endpoint.

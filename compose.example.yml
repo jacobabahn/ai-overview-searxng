@@ -1,0 +1,19 @@
+# Reference deployment. For an existing instance, merge the mounts/environment
+# into its service instead of replacing its Compose file.
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    ports:
+      - "127.0.0.1:8888:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      AI_OVERVIEW_CONFIG: /etc/searxng/overview.yml
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+    volumes:
+      - ./src/ai_overview:/usr/local/searxng/ai_overview:ro
+      - ./overview.yml:/etc/searxng/overview.yml:ro
+      - ./settings.yml:/etc/searxng/settings.yml:ro

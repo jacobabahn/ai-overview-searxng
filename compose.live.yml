@@ -1,0 +1,12 @@
+name: ai-overview-live
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    ports:
+      - "127.0.0.1:8898:8080"
+    env_file:
+      - ./.local/provider.env
+    volumes:
+      - ./src/ai_overview:/usr/local/searxng/ai_overview:ro
+      - ./.local/settings.yml:/etc/searxng/settings.yml:ro
+      - ./.local/overview.yml:/etc/searxng/overview.yml:ro

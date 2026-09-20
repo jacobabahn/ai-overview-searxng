@@ -1,0 +1,15 @@
+# Merge these entries into your existing settings.yml.
+# Set server.secret_key to a strong random value (24+ characters).
+plugins:
+  ai_overview.plugin.SXNGPlugin:
+    active: true
+  searx.plugins.ai_answers.SXNGPlugin:
+    active: false
+
+outgoing:
+  networks:
+    ai_overview:
+      # Allows configured local HTTP endpoints; TLS settings and proxies are
+      # inherited from SearXNG. Use false if all your model endpoints use HTTPS.
+      enable_http: true
+      retries: 0

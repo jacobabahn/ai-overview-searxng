@@ -1,0 +1,43 @@
+<link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='overview.css') }}">
+<section class="ai-overview" aria-label="AI overview" data-token="{{ token }}"
+         data-endpoint="{{ url_for('ai_overview.stream') }}"
+         data-models-endpoint="{{ url_for('ai_overview.models') }}"
+         data-select-endpoint="{{ url_for('ai_overview.select') }}"
+         data-profile="{{ profile }}" data-model="{{ model }}">
+  <header class="ai-overview-header">
+    <h2>AI overview</h2>
+    <div class="ai-header-actions">
+      {% if model_picker %}
+      <button type="button" class="ai-settings-toggle" aria-expanded="false">Settings</button>
+      {% endif %}
+      <button type="button" class="ai-collapse" aria-expanded="true">Collapse</button>
+    </div>
+  </header>
+  <div class="ai-content">
+    {% if model_picker %}
+    <div class="ai-model-settings" hidden>
+      <label>Model <select class="ai-model" aria-label="Overview model" disabled>
+        <option>{{ profile }} / {{ model }}</option>
+      </select></label>
+      <button type="button" class="ai-refresh-models">Reload model list</button>
+      <small>Changing models starts a new overview.</small>
+      <p class="ai-model-status" role="status" aria-live="polite"></p>
+    </div>
+    {% endif %}
+    <p class="ai-status" role="status" aria-live="polite">Preparing overview…</p>
+    <div class="ai-turns"></div>
+    <div class="ai-actions">
+      <button type="button" class="ai-stop" hidden>Stop</button>
+      <button type="button" class="ai-retry" hidden>Retry</button>
+    </div>
+    <form class="ai-follow-up" hidden>
+      <label>Ask a follow-up
+        <input name="question" type="text" maxlength="2000" required autocomplete="off"
+               placeholder="What else would you like to know?">
+      </label>
+      <button type="submit">Ask</button>
+    </form>
+    <noscript>Enable JavaScript to generate an AI overview.</noscript>
+  </div>
+</section>
+<script type="module" src="{{ url_for('ai_overview.static', filename='overview.js') }}"></script>

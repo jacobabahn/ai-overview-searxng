@@ -1,0 +1,27 @@
+use_default_settings:
+  engines:
+    keep_only: []
+general:
+  instance_name: AI overview integration test
+server:
+  secret_key: integration-test-only-not-a-production-secret
+  limiter: false
+  image_proxy: false
+search:
+  formats: [html, json]
+ui:
+  default_theme: simple
+outgoing:
+  networks:
+    ai_overview:
+      enable_http: true
+      retries: 0
+plugins:
+  ai_overview.plugin.SXNGPlugin:
+    active: true
+engines:
+  - name: overview fixture
+    engine: overview_fixture
+    shortcut: fixture
+    categories: general
+    disabled: false
