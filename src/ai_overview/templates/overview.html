@@ -1,43 +1,55 @@
 <link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='overview.css') }}">
-<section class="ai-overview" aria-label="AI overview" data-token="{{ token }}"
+<section class="ai-overview" aria-label="AI Summary" data-expanded="false" data-loading="true" data-token="{{ token }}"
          data-endpoint="{{ url_for('ai_overview.stream') }}"
          data-models-endpoint="{{ url_for('ai_overview.models') }}"
          data-select-endpoint="{{ url_for('ai_overview.select') }}"
          data-profile="{{ profile }}" data-model="{{ model }}">
   <header class="ai-overview-header">
-    <h2>AI overview</h2>
+    <h2><span class="ai-sparkle" aria-hidden="true">✦</span>AI Summary</h2>
     <div class="ai-header-actions">
-      {% if model_picker %}
-      <button type="button" class="ai-settings-toggle" aria-expanded="false">Settings</button>
-      {% endif %}
-      <button type="button" class="ai-collapse" aria-expanded="true">Collapse</button>
+      <button type="button" class="ai-copy" aria-label="Copy answer" title="Copy answer" disabled>⧉</button>
+      <button type="button" class="ai-options-toggle" aria-label="Overview options" aria-expanded="false" title="Overview options">⚙</button>
+      <button type="button" class="ai-collapse" aria-label="Collapse overview" aria-expanded="true" title="Collapse overview">⌃</button>
     </div>
   </header>
-  <div class="ai-content">
+  <div class="ai-options" hidden>
     {% if model_picker %}
-    <div class="ai-model-settings" hidden>
-      <label>Model <select class="ai-model" aria-label="Overview model" disabled>
-        <option>{{ profile }} / {{ model }}</option>
-      </select></label>
-      <button type="button" class="ai-refresh-models">Reload model list</button>
-      <small>Changing models starts a new overview.</small>
-      <p class="ai-model-status" role="status" aria-live="polite"></p>
-    </div>
+    <button type="button" class="ai-settings-toggle" aria-expanded="false">Model settings</button>
     {% endif %}
-    <p class="ai-status" role="status" aria-live="polite">Preparing overview…</p>
+    <button type="button" class="ai-regenerate">Regenerate overview</button>
+  </div>
+  {% if model_picker %}
+  <div class="ai-model-settings" hidden>
+    <p class="ai-current-model">Current model: {{ model }}</p>
+    <label>Model <select class="ai-model" aria-label="Overview model" disabled>
+      <option>{{ profile }} / {{ model }}</option>
+    </select></label>
+    <div class="ai-settings-actions">
+      <button type="button" class="ai-apply-model" disabled>Use model and restart</button>
+      <button type="button" class="ai-refresh-models">Reload list</button>
+    </div>
+    <small>Restarts the overview and clears follow-ups.</small>
+    <p class="ai-model-status" role="status" aria-live="polite"></p>
+  </div>
+  {% endif %}
+  <p class="ai-collapsed-preview" hidden></p>
+  <div class="ai-content">
+    <p class="ai-status" role="status" aria-live="polite">Reading search results…</p>
     <div class="ai-turns"></div>
+    <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false">More ⌄</button></div>
+    <span class="ai-copy-status ai-sr-only" role="status"></span>
     <div class="ai-actions">
       <button type="button" class="ai-stop" hidden>Stop</button>
       <button type="button" class="ai-retry" hidden>Retry</button>
     </div>
     <form class="ai-follow-up" hidden>
-      <label>Ask a follow-up
+      <label><span class="ai-sr-only">Ask a follow-up</span>
         <input name="question" type="text" maxlength="2000" required autocomplete="off"
-               placeholder="What else would you like to know?">
+               placeholder="Ask a follow-up…">
       </label>
-      <button type="submit">Ask</button>
+      <button type="submit" aria-label="Ask" title="Ask">↑</button>
     </form>
-    <noscript>Enable JavaScript to generate an AI overview.</noscript>
+    <noscript>Enable JavaScript to generate an AI Summary.</noscript>
   </div>
 </section>
 <script type="module" src="{{ url_for('ai_overview.static', filename='overview.js') }}"></script>

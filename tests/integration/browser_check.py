@@ -28,43 +28,57 @@ def main() -> None:
         page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
         panel = page.locator(".ai-overview")
         expect(panel).to_be_visible()
-        expect(panel.locator(".ai-status")).to_have_text(
-            "Check the sources for details.", timeout=20000
-        )
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer a")).to_have_count(2)
+        expect(page.locator(".ai-prototype-switcher")).to_have_count(0)
+        expect(panel.locator("h2")).to_have_text("✦AI Summary")
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        panel.get_by_role("button", name="More", exact=False).click()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
+        panel.get_by_role("button", name="Less", exact=False).click()
+        panel.locator(".ai-source-pills button").first.click()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         expect(page.locator("#urls .result")).to_have_count(2)
+        panel.locator(".ai-answer a").first.click()
+        expect(panel.locator(".ai-sources").first).to_have_attribute("open", "")
+        expect(panel.locator(".ai-sources li").first).to_be_focused()
+        expect(panel.locator(".ai-sources li p").first).not_to_be_empty()
+        panel.locator(".ai-sources summary").first.click()
         first_href = panel.locator(".ai-answer a").first.get_attribute("href")
         panel.get_by_label("Ask a follow-up").fill("Why is sunset different?")
         panel.get_by_role("button", name="Ask", exact=True).click()
         expect(panel.locator(".ai-answer")).to_have_count(2)
-        expect(panel.locator(".ai-status")).to_have_text(
-            "Check the sources for details.", timeout=20000
-        )
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         assert panel.locator(".ai-answer a").first.get_attribute("href") == first_href
         picker = panel.get_by_label("Overview model")
         expect(picker).to_be_hidden()
-        panel.get_by_role("button", name="Settings", exact=True).click()
+        panel.get_by_role("button", name="Overview options", exact=True).click()
+        panel.get_by_role("button", name="Model settings", exact=True).click()
         expect(picker).to_be_visible()
         expect(picker).to_be_enabled()
         target = picker.locator("option", has_text="go-fixture / glm-5.2").get_attribute("value")
         assert target is not None
         picker.select_option(target)
+        expect(panel.locator(".ai-answer")).to_have_count(2)
+        panel.get_by_role("button", name="Use model and restart", exact=True).click()
         expect(panel.locator(".ai-answer")).to_have_count(1)
-        expect(panel.locator(".ai-status")).to_have_text(
-            "Check the sources for details.", timeout=20000
-        )
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
         expect(picker).to_be_hidden()
         expect(picker.locator("option", has_text="unknown-model")).to_have_attribute("disabled", "")
         page.reload()
-        expect(panel.locator(".ai-status")).to_have_text(
-            "Check the sources for details.", timeout=20000
-        )
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
         page.screenshot(path=str(output / "overview-desktop.png"), full_page=True)
-        panel.get_by_role("button", name="Collapse").click()
+        panel.get_by_role("button", name="Collapse overview").click()
         expect(panel.locator(".ai-content")).to_be_hidden()
-        panel.get_by_role("button", name="Expand").click()
+        expect(panel.locator(".ai-collapsed-preview")).to_contain_text("sky")
+        panel.get_by_role("button", name="Overview options").click()
+        panel.get_by_role("button", name="Model settings").click()
+        expect(panel.locator(".ai-content")).to_be_hidden()
+        page.keyboard.press("Escape")
+        expect(panel.locator(".ai-model-settings")).to_be_hidden()
+        panel.get_by_role("button", name="Expand overview").click()
 
         page.set_viewport_size({"width": 390, "height": 844})
         page.screenshot(path=str(output / "overview-mobile.png"), full_page=True)
@@ -72,6 +86,33 @@ def main() -> None:
         page.emulate_media(color_scheme="dark")
         page.screenshot(path=str(output / "overview-dark.png"), full_page=True)
         page.emulate_media(color_scheme="light")
+        panel.get_by_role("button", name="Overview options").click()
+        panel.get_by_role("button", name="Model settings").click()
+        page.screenshot(path=str(output / "overview-settings-mobile.png"), full_page=True)
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.keyboard.press("Escape")
+        panel.get_by_role("button", name="Overview options").click()
+        with page.expect_request(lambda request: request.url.endswith("/stream")):
+            panel.get_by_role("button", name="Regenerate overview").click()
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel.locator(".ai-answer")).to_have_count(1)
+        panel.locator(".ai-more").click()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
+
+        # A failed model selection keeps the existing answer and reports the error.
+        page.route(
+            "**/ai-overview/select",
+            lambda route: route.fulfill(
+                status=503,
+                content_type="application/json",
+                body='{"message":"Model settings are temporarily unavailable."}',
+            ),
+        )
+        panel.get_by_role("button", name="Overview options").click()
+        panel.get_by_role("button", name="Regenerate overview").click()
+        expect(panel.locator(".ai-status")).to_contain_text("temporarily unavailable")
+        expect(panel.locator(".ai-answer")).to_have_count(1)
+        page.unroute("**/ai-overview/select")
 
         # Model text is always text, and unknown citation IDs never become links.
         assert page.evaluate("""async () => {

@@ -174,3 +174,16 @@ quality.
 - [Ollama chat API](https://docs.ollama.com/api/chat)
 - [OpenRouter chat API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion)
 - [OpenCode Go](https://opencode.ai/docs/go/)
+
+
+## Selected summary UI
+
+The user selected prototype D: a transparent, full-column AI Summary with a sparkle
+icon, compact toolbar, per-answer source pills, and centered More/Less control.
+The initial answer previews four lines; More reveals the full conversation and
+follow-up form. Citations and pills expand the relevant turn's source snippets.
+Motion respects reduced-motion preferences. The generated-from-snippets footer was
+removed at the user's request.
+
+The full layout study is preserved on Git branch `prototype/overview-layouts`
+(commit `24ab31f`). The runtime has no prototype assets, flags, or variant switcher.
