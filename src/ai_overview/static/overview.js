@@ -1,38 +1,5 @@
-// No provider-specific behavior or model-provided HTML belongs in this component.
-export async function* events(body) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let name = "message";
-  let data = [];
-  try {
-    while (true) {
-      const {value, done} = await reader.read();
-      buffer += done ? decoder.decode() : decoder.decode(value, {stream: true});
-      let end;
-      while ((end = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, end).replace(/\r$/, "");
-        buffer = buffer.slice(end + 1);
-        if (!line) {
-          if (data.length) yield {name, data: JSON.parse(data.join("\n"))};
-          name = "message";
-          data = [];
-        } else if (line.startsWith("event:")) {
-          name = line.slice(6).trim();
-        } else if (line.startsWith("data:")) {
-          data.push(line.slice(5).replace(/^ /, ""));
-        }
-      }
-      if (buffer.length > 300000 || data.join("").length > 300000) {
-        throw new Error("The overview response was too large.");
-      }
-      if (done) break;
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
+import {Conversation} from "./conversation.js";
+export {events} from "./conversation.js";
 
 function validURL(value) {
   try {
@@ -104,13 +71,9 @@ function sourceList(sources) {
 function mount(panel) {
   if (panel.dataset.mounted) return;
   panel.dataset.mounted = "true";
-  let token = panel.dataset.token;
-  const initialToken = token;
+  const initialToken = panel.dataset.token;
   delete panel.dataset.token;
-  let controller;
-  let pendingQuestion;
   let failedTurn;
-  let canFollowUp = false;
   const status = panel.querySelector(".ai-status");
   const turns = panel.querySelector(".ai-turns");
   const stop = panel.querySelector(".ai-stop");
@@ -130,10 +93,10 @@ function mount(panel) {
     panel.dataset.expanded = String(value);
     more.setAttribute("aria-expanded", String(value));
     more.querySelector("span").textContent = value ? "Less" : "More";
-    form.hidden = !canFollowUp || !expanded;
+    form.hidden = !conversation.state.canFollowUp || !expanded;
   }
   function updateDisclosure() {
-    moreRow.hidden = !turns.querySelector(".ai-answer")?.textContent && !canFollowUp;
+    moreRow.hidden = !turns.querySelector(".ai-answer")?.textContent && !conversation.state.canFollowUp;
   }
   more.addEventListener("click", () => expand(!expanded));
   copy.addEventListener("click", async () => {
@@ -183,95 +146,44 @@ function mount(panel) {
       optionsToggle.focus();
     }
   });
-  regenerate.addEventListener("click", async () => {
-    if (controller || switchingModel || loadingModels) return;
-    closeOptions();
-    try {
-      if (picker) {
-        await chooseModel(selected);
-        picker.value = String(choices.findIndex(c => c.profile === selected.profile && c.model === selected.model));
-      } else { token = initialToken; turns.replaceChildren(); canFollowUp = false; }
-      if (panel.querySelector(".ai-content").hidden) collapse.click();
-      optionsToggle.focus();
-      await run();
-    } catch (error) {
-      if (panel.querySelector(".ai-content").hidden) collapse.click();
-      status.hidden = false;
-      status.textContent = error.message;
-    } finally {
-      if (picker) picker.disabled = loadingModels || !choices.length;
-    }
-  });
   const reloadModels = panel.querySelector(".ai-refresh-models");
   const modelStatus = panel.querySelector(".ai-model-status");
-  let choices = [];
-  let selected = {profile: panel.dataset.profile, model: panel.dataset.model};
-  let loadingModels = false;
-  let switchingModel = false;
   const selectionKey = "searxng-ai-overview-model";
+  let activeTurn;
+  const conversation = new Conversation({
+    token: initialToken,
+    selected: {profile: panel.dataset.profile, model: panel.dataset.model},
+    endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null},
+    onEvent: renderEvent,
+  });
 
-  async function modelRequest(endpoint, body) {
-    const response = await fetch(endpoint, {
-      method: "POST", credentials: "same-origin",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({token: initialToken, ...body}),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || "Could not load model settings.");
-    return data;
-  }
-
-  async function loadModels() {
-    loadingModels = true;
-    applyModel.disabled = true;
-    picker.disabled = true;
-    reloadModels.disabled = true;
-    modelStatus.textContent = "Loading models…";
-    try {
-      const result = await modelRequest(panel.dataset.modelsEndpoint, {});
-      choices = result.choices;
-      picker.replaceChildren();
-      for (const [index, choice] of choices.entries()) {
-        const option = document.createElement("option");
-        option.value = String(index);
-        option.textContent = `${choice.profile} / ${choice.model}${choice.available ? "" : " (not configured)"}`;
-        option.disabled = !choice.available;
-        option.selected = choice.profile === selected.profile && choice.model === selected.model;
-        picker.append(option);
-      }
-      modelStatus.textContent = result.warnings.join(" ");
-    } catch (error) {
-      modelStatus.textContent = `${error.message} Using the current model.`;
-    } finally {
-      loadingModels = false;
-      picker.disabled = Boolean(controller) || !choices.length;
-      reloadModels.disabled = Boolean(controller);
-      applyModel.disabled = Boolean(controller) || !choices.length;
+  function updateControls(state) {
+    panel.dataset.loading = String(state.phase === "streaming");
+    stop.hidden = state.phase !== "streaming";
+    retry.hidden = !state.canRetry;
+    retry.disabled = state.busy;
+    input.disabled = state.busy;
+    submit.disabled = state.busy;
+    regenerate.disabled = state.busy || state.loadingModels;
+    form.hidden = !state.canFollowUp || !expanded;
+    if (picker) {
+      picker.disabled = state.busy || state.loadingModels || !state.choices.length;
+      reloadModels.disabled = state.busy || state.loadingModels;
+      applyModel.disabled = picker.disabled;
     }
   }
 
-  async function chooseModel(choice) {
-    switchingModel = true;
-    picker.disabled = true;
-    input.disabled = true;
-    submit.disabled = true;
-    try {
-      const result = await modelRequest(panel.dataset.selectEndpoint, {profile: choice.profile, model: choice.model});
-      token = result.token;
-      selected = {profile: choice.profile, model: choice.model};
-      panel.querySelector(".ai-current-model").textContent = `Current model: ${choice.model}`;
-      try { localStorage.setItem(selectionKey, JSON.stringify(selected)); } catch { /* Storage is optional. */ }
-      turns.replaceChildren();
-      failedTurn = null;
-      canFollowUp = false;
-      form.hidden = true;
-      input.value = "";
-    } finally {
-      switchingModel = false;
-      input.disabled = false;
-      submit.disabled = false;
-    }
+  function showConversation() {
+    if (panel.querySelector(".ai-content").hidden) collapse.click();
+    optionsToggle.focus();
   }
+
+  regenerate.addEventListener("click", async () => {
+    closeOptions();
+    showConversation();
+    try { await conversation.restart(); }
+    catch (error) { status.hidden = false; status.textContent = error.message; }
+  });
 
   if (picker) {
     settingsToggle.addEventListener("click", () => {
@@ -280,28 +192,16 @@ function mount(panel) {
       closeOptions();
       if (!settings.hidden && !picker.disabled) picker.focus();
     });
-    reloadModels.addEventListener("click", loadModels);
+    reloadModels.addEventListener("click", () => conversation.loadModels());
     applyModel.addEventListener("click", async () => {
-      if (controller || switchingModel || loadingModels) return;
-      const choice = choices[Number(picker.value)];
+      const choice = conversation.state.choices[Number(picker.value)];
       if (!choice?.available) return;
-      picker.disabled = true;
-      reloadModels.disabled = true;
-      applyModel.disabled = true;
       try {
-        await chooseModel(choice);
-        settings.hidden = true;
-        settingsToggle.setAttribute("aria-expanded", "false");
-        optionsToggle.focus();
-        if (panel.querySelector(".ai-content").hidden) collapse.click();
-        await run();
+        await conversation.restart(choice);
       } catch (error) {
         modelStatus.textContent = error.message;
+        const {choices, selected} = conversation.state;
         picker.value = String(choices.findIndex(c => c.profile === selected.profile && c.model === selected.model));
-      } finally {
-        picker.disabled = false;
-        reloadModels.disabled = false;
-        applyModel.disabled = false;
       }
     });
   }
@@ -315,19 +215,17 @@ function mount(panel) {
     preview.textContent = turns.querySelector(".ai-answer")?.textContent || status.textContent;
     if (!content.hidden) updateDisclosure();
   });
-  stop.addEventListener("click", () => controller?.abort());
-  window.addEventListener("pagehide", () => controller?.abort());
-  retry.addEventListener("click", () => run(pendingQuestion));
+  stop.addEventListener("click", () => conversation.stop());
+  window.addEventListener("pagehide", () => conversation.stop());
+  retry.addEventListener("click", () => conversation.retry());
   form.addEventListener("submit", event => {
     event.preventDefault();
-    if (!controller && !switchingModel && input.value.trim()) run(input.value.trim());
+    if (input.value.trim()) conversation.run(input.value.trim());
   });
 
-  async function run(question) {
-    if (controller) return;
+  function beginTurn(question) {
     failedTurn?.remove();
     failedTurn = null;
-    pendingQuestion = question;
     if (!question && !turns.childElementCount) {
       expand(false);
       moreRow.hidden = true;
@@ -335,17 +233,8 @@ function mount(panel) {
     }
     if (question) expand(true);
     copyStatus.textContent = "";
-    controller = new AbortController();
-    panel.dataset.loading = "true";
-    if (picker) { picker.disabled = true; reloadModels.disabled = true; }
-    stop.hidden = false;
-    retry.hidden = true;
-    input.disabled = true;
-    submit.disabled = true;
     status.hidden = false;
     status.textContent = "Reading search results…";
-    regenerate.disabled = true;
-    if (applyModel) applyModel.disabled = true;
     const turn = document.createElement("article");
     if (question) {
       const heading = document.createElement("h3");
@@ -371,93 +260,76 @@ function mount(panel) {
       item.focus();
     });
     turns.append(turn);
-    let text = "";
-    let sources = [];
-    let complete = false;
-    try {
-      const response = await fetch(panel.dataset.endpoint, {
-        method: "POST", credentials: "same-origin", signal: controller.signal,
-        headers: {"Content-Type": "application/json", "Accept": "text/event-stream"},
-        body: JSON.stringify({token, ...(question ? {question} : {})}),
-      });
-      if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
-        throw new Error("Could not start the overview. Try again.");
+    activeTurn = {turn, answer, turnStatus, text: "", sources: [], question};
+  }
+
+  function renderEvent(event, state) {
+    updateControls(state);
+    if (event.name === "models_loading") modelStatus.textContent = "Loading models…";
+    if (event.name === "models_error") modelStatus.textContent = event.data.message;
+    if (event.name === "models") {
+      picker.replaceChildren();
+      for (const [index, choice] of state.choices.entries()) {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `${choice.profile} / ${choice.model}${choice.available ? "" : " (not configured)"}`;
+        option.disabled = !choice.available;
+        option.selected = choice.profile === state.selected.profile && choice.model === state.selected.model;
+        picker.append(option);
       }
-      for await (const event of events(response.body)) {
-        if (event.name === "status") status.textContent = event.data.message;
-        if (event.name === "sources") {
-          sources = event.data.sources;
-          const details = sourceList(sources);
-          if (details.querySelector("li")) turn.append(details);
-        }
-        if (event.name === "text_delta") {
-          status.hidden = true;
-          copy.disabled = false;
-          text += event.data.text;
-          renderCitations(answer, text, sources);
-          updateDisclosure();
-          preview.textContent = turns.querySelector(".ai-answer")?.textContent || "";
-        }
-        if (event.name === "error") throw new Error(event.data.message);
-        if (event.name === "done") {
-          token = event.data.token;
-          canFollowUp = event.data.can_follow_up;
-          complete = true;
-          break;
-        }
-      }
-      if (!complete) throw new Error("The connection ended before the answer was complete.");
-      status.textContent = canFollowUp ? "" : "Start a new search to continue.";
-      status.hidden = canFollowUp;
+      modelStatus.textContent = event.data.warnings.join(" ");
+    }
+    if (event.name === "reset") {
+      turns.replaceChildren();
+      activeTurn = failedTurn = null;
       input.value = "";
-    } catch (error) {
-      const message = error.name === "AbortError" ? "Stopped. This answer is incomplete." : error.message;
-      status.hidden = false;
-      status.textContent = message;
-      turnStatus.textContent = text ? "Incomplete answer" : message;
-      turnStatus.hidden = !text;
-      failedTurn = turn;
-      retry.hidden = false;
-    } finally {
-      controller = null;
-      panel.dataset.loading = "false";
-      regenerate.disabled = false;
-      if (applyModel) applyModel.disabled = loadingModels || !choices.length;
-      stop.hidden = true;
-      form.hidden = !canFollowUp || !expanded;
-      input.disabled = false;
-      submit.disabled = false;
-      updateDisclosure();
-      if (question && !form.hidden && (document.activeElement === document.body || form.contains(document.activeElement))) {
-        input.focus();
-      }
       if (picker) {
-        picker.disabled = loadingModels || !choices.length;
-        reloadModels.disabled = loadingModels;
+        panel.querySelector(".ai-current-model").textContent = `Current model: ${state.selected.model}`;
+        picker.value = String(state.choices.findIndex(c => c.profile === state.selected.profile && c.model === state.selected.model));
+        try { localStorage.setItem(selectionKey, JSON.stringify(state.selected)); } catch { /* Storage is optional. */ }
+        settings.hidden = true;
+        settingsToggle.setAttribute("aria-expanded", "false");
       }
+      showConversation();
+    }
+    if (event.name === "turn_start") beginTurn(event.data.question);
+    if (event.name === "status") status.textContent = event.data.message;
+    if (event.name === "sources") {
+      activeTurn.sources = event.data.sources;
+      const details = sourceList(activeTurn.sources);
+      if (details.querySelector("li")) activeTurn.turn.append(details);
+    }
+    if (event.name === "text_delta") {
+      status.hidden = true;
+      copy.disabled = false;
+      activeTurn.text += event.data.text;
+      renderCitations(activeTurn.answer, activeTurn.text, activeTurn.sources);
+      updateDisclosure();
+      preview.textContent = turns.querySelector(".ai-answer")?.textContent || "";
+    }
+    if (event.name === "turn_done") {
+      status.textContent = state.canFollowUp ? "" : "Start a new search to continue.";
+      status.hidden = state.canFollowUp;
+      input.value = "";
+    }
+    if (event.name === "turn_error") {
+      status.hidden = false;
+      status.textContent = event.data.message;
+      activeTurn.turnStatus.textContent = activeTurn.text ? "Incomplete answer" : event.data.message;
+      activeTurn.turnStatus.hidden = !activeTurn.text;
+      failedTurn = activeTurn.turn;
+    }
+    if (event.name === "state" && !state.busy && activeTurn) {
+      updateDisclosure();
+      if (activeTurn.question && !form.hidden && (document.activeElement === document.body || form.contains(document.activeElement))) input.focus();
     }
   }
-  async function start() {
-    if (picker) {
-      const modelsReady = loadModels();
-      try {
-        const saved = JSON.parse(localStorage.getItem(selectionKey) || "null");
-        // The configured model is already signed into the page. Only a different
-        // saved selection needs catalog validation before generation can start.
-        if (saved && typeof saved.profile === "string" && typeof saved.model === "string" &&
-            (saved.profile !== selected.profile || saved.model !== selected.model)) {
-          await modelsReady;
-          const choice = choices.find(c => c.available && c.profile === saved.profile && c.model === saved.model);
-          if (choice) {
-            await chooseModel(choice);
-            picker.value = String(choices.indexOf(choice));
-          }
-        }
-      } catch { /* Use the configured default if saved preferences are unavailable. */ }
-    }
-    await run();
-  }
-  start();
+
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(selectionKey) || "null"); } catch { /* Storage is optional. */ }
+  conversation.start(saved).catch(error => {
+    if (error.name !== "AbortError") { status.hidden = false; status.textContent = error.message; }
+  });
 }
 
 document.querySelectorAll(".ai-overview").forEach(mount);

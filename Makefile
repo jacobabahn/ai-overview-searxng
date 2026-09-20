@@ -5,6 +5,7 @@ check:
 	uv run ruff format --check .
 	uv run ty check
 	uv run pytest -q
+	node --test tests/browser/*.test.js
 
 demo:
 	uv run python -m ai_overview.demo

@@ -4,16 +4,16 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict, replace
 from typing import Optional
 
-from .catalog import selected_profile
 from .config import Config, Profile
 from .errors import OverviewError
 from .evidence import encoded_size
 from .models import Conversation, Event, Message, Plan, SearchOptions, Source, Turn
 from .providers import Provider
-from .providers.transport import Transport
+from .providers.transport import Transport, remaining
+from .routing import selected_profile
 from .state import StateSigner
 
-Retriever = Callable[[str, SearchOptions], tuple[Source, ...]]
+Retriever = Callable[[str, SearchOptions, float], tuple[Source, ...]]
 
 ANSWER_PROMPT = """Write a concise search overview using only the supplied search snippets.
 Lead with the direct answer. Aim for 100–180 words; use fewer for simple questions.
@@ -64,11 +64,12 @@ class GenerationService:
         sources = state.sources
         if question:
             yield Event("status", {"message": "Preparing follow-up…"})
-            plan = self._plan(provider, state, question)
+            plan = self._plan(provider, state, question, deadline)
+            remaining(deadline)
             if plan.query:
                 yield Event("status", {"message": "Searching for sources…"})
-                sources = self.retrieve(plan.query, state.search)
-        _deadline(deadline)
+                sources = self.retrieve(plan.query, state.search, remaining(deadline))
+        remaining(deadline)
         yield Event("sources", {"sources": [asdict(s) for s in sources]})
         if not sources:
             yield Event(
@@ -83,14 +84,16 @@ class GenerationService:
         _input_budget(messages, profile)
         yield Event("status", {"message": "Writing overview…"})
         output: list[str] = []
-        stream = provider.stream(messages, state.session)
+        remaining(deadline)
+        stream = provider.stream(messages, state.session, deadline=deadline)
         try:
             for text in stream:
-                _deadline(deadline)
+                remaining(deadline)
                 output.append(text)
                 yield Event("text_delta", {"text": text})
         finally:
             stream.close()
+        remaining(deadline)
         answer = "".join(output)
         if not answer.strip():
             raise OverviewError("empty_answer", "The model returned no answer. Try again.")
@@ -108,7 +111,9 @@ class GenerationService:
             },
         )
 
-    def _plan(self, provider: Provider, state: Conversation, question: str) -> Plan:
+    def _plan(
+        self, provider: Provider, state: Conversation, question: str, deadline: float
+    ) -> Plan:
         # Keep planning short, but preserve all questions and references to source titles.
         history = [
             {
@@ -123,8 +128,12 @@ class GenerationService:
             Message("user", json.dumps({"history": history, "follow_up": question})),
         ]
         _input_budget(messages, provider.profile)
+        remaining(deadline)
         stream = provider.stream(
-            messages, state.session, max_tokens=provider.profile.planning_max_output_tokens
+            messages,
+            state.session,
+            max_tokens=provider.profile.planning_max_output_tokens,
+            deadline=deadline,
         )
         try:
             text = "".join(stream).strip()
@@ -171,8 +180,3 @@ def _evidence_message(question: str, sources: tuple[Source, ...]) -> str:
 def _input_budget(messages: list[Message], profile: Profile) -> None:
     if encoded_size([asdict(m) for m in messages]) > profile.max_input_bytes:
         raise OverviewError("context_limit", "This conversation is full. Start a new search.")
-
-
-def _deadline(deadline: float) -> None:
-    if time.monotonic() > deadline:
-        raise OverviewError("timeout", "Generation took too long. Try again.")

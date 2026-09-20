@@ -41,10 +41,17 @@ sequenceDiagram
   normalized events, and successful conversation updates.
 - `providers/`: request translation and incremental response parsing for Chat
   Completions, Responses, Gemini, and Ollama's native chat protocol.
-- `config.py`: named profiles, server-side credentials, endpoints, and limits.
+- `config.py`: configuration loading, named profiles, server-side credentials, and limits.
+- `routing.py`: provider defaults, model/protocol routes, endpoint selection, and
+  compatible options, shared by initial configuration and signed selections.
 - `catalog.py`: cached Go model discovery, documented protocol routes, and
   validation of model choices before signing a new conversation.
-- `static/`: framework-free browser component and scoped theme-aware styles.
+- `static/conversation.js`: request ordering, model selection, retry, cancellation,
+  and signed continuation ownership, independent of the DOM. Selection and its
+  restarted generation reserve one operation; only completed answers advance state.
+- `static/overview.js`: DOM rendering, turn-specific citations, and controls derived
+  from conversation state. Catalog loading can proceed alongside initial generation.
+- `static/`: packaged browser modules and scoped theme-aware styles; no build step.
 
 Use typed dataclasses for profiles, sources, search options, conversations,
 turns, messages, and events. Use uv for dependencies, Ruff for formatting,
@@ -119,6 +126,14 @@ asking for a standalone search query or a decision to reuse evidence. This uses
 plain JSON text, not model tool calls. Invalid plans fall back to a bounded search
 using the original query and follow-up. Limit retrieval to one search per turn.
 
+Generation owns one absolute monotonic deadline per turn, shared by planning
+and answer requests. Retrieval receives the remaining allowance, capped by its
+existing search timeout. Each stage checks the budget before starting, and late
+completion cannot produce a signed continuation. Network adapters cap their I/O
+timeouts to the remaining allowance when each request starts and check the deadline
+between chunks. Blocking I/O can still take until its timeout to return; this is
+cooperative enforcement, not immediate remote cancellation.
+
 Use conservative UTF-8 byte budgets for prompt input, plus provider output-token
 limits and explicit stream/output bounds. These are not exact tokenizer counts;
 the operator must fit the profile to the chosen model. Do not truncate the latest
@@ -158,6 +173,11 @@ Ask a follow-up…                                Ask
 3. Add the SearXNG plugin and test against the installed image in isolation.
 4. Provide Compose settings, provider examples, and instructions to replace the
    reference plugin once the new integration is ready.
+
+`make check` includes dependency-free Node tests of the conversation interface,
+using controlled fetch responses for selection/retry overlap, cancellation, saved
+preferences, and token advancement. Python tests use a controlled clock for the
+whole-turn deadline and exercise shared routing through configuration and selection.
 
 Test fragmented UTF-8/stream frames, normal completion and truncation, timeouts,
 token tampering/expiry, empty evidence, source sanitization, follow-up retrieval,

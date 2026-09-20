@@ -2,7 +2,7 @@ import json
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 from flask import Flask
@@ -23,7 +23,13 @@ class ScriptedTransport:
 
     @contextmanager
     def stream(
-        self, url: str, headers: dict[str, str], body: dict[str, Any], profile: Profile
+        self,
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> Iterator[Iterable[bytes]]:
         self.calls.append(body)
         text = self.answers.pop(0)
@@ -43,7 +49,7 @@ def make_service(answers: list[str]) -> tuple[GenerationService, list[str], Scri
     )
     queries: list[str] = []
 
-    def retrieve(query: str, options: SearchOptions) -> tuple[Source, ...]:
+    def retrieve(query: str, options: SearchOptions, timeout: float) -> tuple[Source, ...]:
         queries.append(query)
         return build_sources([{"url": "https://new.example", "content": "Fresh evidence"}])
 
@@ -153,3 +159,95 @@ def test_shell_escapes_content_and_uses_external_assets() -> None:
     assert "<img onerror=" not in shell
     assert 'type="module" src=' in shell
     assert "/ai-overview/static/overview.css" in shell
+
+
+@pytest.mark.parametrize(
+    "planning_time,retrieval_time,answer_time,expected_calls,succeeds",
+    [(10, 0, 0, 1, False), (8, 3, 0, 1, False), (4, 2, 5, 2, False), (4, 2, 3, 2, True)],
+)
+def test_followup_shares_deadline_and_never_commits_late_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    planning_time: int,
+    retrieval_time: int,
+    answer_time: int,
+    expected_calls: int,
+    succeeds: bool,
+) -> None:
+    from ai_overview.models import Event, Turn
+
+    clock = [100.0]
+    monkeypatch.setattr("ai_overview.service.time.monotonic", lambda: clock[0])
+    service, _, transport = make_service(['{"query":"fresh"}', "Answer [1]"])
+    service.config = replace(
+        service.config,
+        profiles={"test": replace(service.config.profiles["test"], timeout_seconds=10)},
+    )
+    sources = build_sources([{"url": "https://old.example", "content": "Evidence"}])
+    state = replace(initial_state("q?", sources, "test"), turns=(Turn("q?", "First", sources),))
+    deadlines: list[Optional[float]] = []
+    closed: list[bool] = []
+    original_stream = transport.stream
+
+    @contextmanager
+    def timed_stream(
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        profile: Profile,
+        *,
+        deadline: Optional[float] = None,
+    ) -> Iterator[Iterable[bytes]]:
+        deadlines.append(deadline)
+        elapsed = planning_time if len(deadlines) == 1 else answer_time
+        try:
+            with original_stream(url, headers, body, profile, deadline=deadline) as chunks:
+
+                def delayed() -> Iterator[bytes]:
+                    for index, chunk in enumerate(chunks):
+                        # Completion can arrive late even after text arrived on time.
+                        if index == 1:
+                            clock[0] += elapsed
+                        yield chunk
+
+                yield delayed()
+        finally:
+            closed.append(True)
+
+    monkeypatch.setattr(transport, "stream", timed_stream)
+    allowances: list[float] = []
+
+    def retrieve(query: str, options: SearchOptions, timeout: float) -> tuple[Source, ...]:
+        allowances.append(timeout)
+        clock[0] += retrieval_time
+        return sources
+
+    service.retrieve = retrieve
+    events: list[Event] = []
+    if succeeds:
+        events.extend(service.run(state, "Why?"))
+        assert events[-1].name == "done"
+        assert len(service.signer.loads(events[-1].data["token"]).turns) == 2
+    else:
+        with pytest.raises(OverviewError) as caught:
+            events.extend(service.run(state, "Why?"))
+        assert caught.value.code == "timeout"
+        assert not any(event.name == "done" for event in events)
+    assert len(state.turns) == 1
+    assert deadlines == [110.0] * expected_calls
+    assert len(transport.calls) == len(closed) == expected_calls
+    assert allowances == ([] if planning_time >= 10 else [10 - planning_time])
+
+
+def test_expired_turn_does_not_start_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = [100.0]
+    monkeypatch.setattr("ai_overview.service.time.monotonic", lambda: clock[0])
+    service, _, transport = make_service(["unused"])
+    sources = build_sources([{"url": "https://a.example", "content": "Evidence"}])
+    stream = service.run(initial_state("q?", sources, "test"), None)
+    assert next(stream).name == "sources"
+    assert next(stream).name == "status"
+    clock[0] += 90
+    with pytest.raises(OverviewError) as caught:
+        next(stream)
+    assert caught.value.code == "timeout"
+    assert not transport.calls

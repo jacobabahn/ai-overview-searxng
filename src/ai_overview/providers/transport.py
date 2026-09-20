@@ -23,10 +23,23 @@ def check_status(status: int) -> None:
     raise OverviewError("provider_error", "The provider could not complete this request.")
 
 
+def remaining(deadline: float) -> float:
+    seconds = deadline - time.monotonic()
+    if seconds <= 0:
+        raise OverviewError("timeout", "Generation took too long. Try again.")
+    return seconds
+
+
 def bounded(chunks: Iterable[bytes], deadline: float) -> Iterator[bytes]:
-    for chunk in chunks:
-        if time.monotonic() > deadline:
-            raise OverviewError("timeout", "Generation took too long. Try again.")
+    iterator = iter(chunks)
+    while True:
+        remaining(deadline)
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            remaining(deadline)
+            return
+        remaining(deadline)
         if isinstance(chunk, Exception):
             raise OverviewError("connection", "The provider connection was interrupted.")
         if chunk:
@@ -40,8 +53,10 @@ class HTTPXTransport:
         headers: dict[str, str],
         body: dict[str, Any],
         profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> AbstractContextManager[Iterable[bytes]]:
-        return self._request("POST", url, headers, body, profile)
+        return self._request("POST", url, headers, body, profile, deadline)
 
     def get_json(self, url: str, profile: Profile) -> dict[str, Any]:
         # The Go catalog is public. Never send credentials to discovery requests.
@@ -62,11 +77,16 @@ class HTTPXTransport:
         headers: dict[str, str],
         body: Optional[dict[str, Any]],
         profile: Profile,
+        deadline: Optional[float] = None,
     ) -> Iterator[Iterable[bytes]]:
         import httpx
 
-        deadline = time.monotonic() + profile.timeout_seconds
-        timeout = httpx.Timeout(profile.read_timeout_seconds, connect=10)
+        if deadline is None:
+            deadline = time.monotonic() + profile.timeout_seconds
+        allowance = remaining(deadline)
+        timeout = httpx.Timeout(
+            min(profile.read_timeout_seconds, allowance), connect=min(10, allowance)
+        )
         try:
             with httpx.Client(timeout=timeout, follow_redirects=False) as client:
                 with client.stream(
@@ -89,8 +109,10 @@ class SearXNGTransport:
         headers: dict[str, str],
         body: dict[str, Any],
         profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> AbstractContextManager[Iterable[bytes]]:
-        return self._request("POST", url, headers, body, profile)
+        return self._request("POST", url, headers, body, profile, deadline)
 
     def get_json(self, url: str, profile: Profile) -> dict[str, Any]:
         # The Go catalog is public. Never send credentials to discovery requests.
@@ -111,12 +133,15 @@ class SearXNGTransport:
         headers: dict[str, str],
         body: Optional[dict[str, Any]],
         profile: Profile,
+        deadline: Optional[float] = None,
     ) -> Iterator[Iterable[bytes]]:
         from searx import network  # ty: ignore[unresolved-import]
 
         response = None
         previous_network = network.get_context_network()
-        deadline = time.monotonic() + profile.timeout_seconds
+        if deadline is None:
+            deadline = time.monotonic() + profile.timeout_seconds
+        allowance = remaining(deadline)
         try:
             network.set_context_network_name(profile.network)
             response, chunks = network.stream(
@@ -124,7 +149,7 @@ class SearXNGTransport:
                 url,
                 headers=headers,
                 **({"json": body} if body is not None else {}),
-                timeout=profile.read_timeout_seconds,
+                timeout=min(profile.read_timeout_seconds, allowance),
                 allow_redirects=False,
                 # SearXNG's stream helper defaults to raw compressed image bytes.
                 # Ask for identity so JSON/SSE arrive as readable application data.
@@ -154,6 +179,8 @@ class Transport(Protocol):
         headers: dict[str, str],
         body: dict[str, Any],
         profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> AbstractContextManager[Iterable[bytes]]: ...
 
 

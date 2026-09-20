@@ -6,25 +6,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-DEFAULTS = {
-    "openai": ("responses", "https://api.openai.com/v1/responses", "OPENAI_API_KEY"),
-    "openrouter": ("chat", "https://openrouter.ai/api/v1/chat/completions", "OPENROUTER_API_KEY"),
-    "opencode_go": (
-        "chat",
-        "https://opencode.ai/zen/go/v1/chat/completions",
-        "OPENCODE_GO_API_KEY",
-    ),
-    "gemini": ("gemini", "https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY"),
-    "ollama": ("ollama", "http://localhost:11434/api/chat", None),
-    "local": ("chat", "http://localhost:1234/v1/chat/completions", None),
-}
-EXTRA_OPTIONS = {
-    "chat": {"temperature", "top_p", "reasoning_effort", "thinking"},
-    "responses": {"temperature", "top_p", "reasoning"},
-    "gemini": {"temperature", "topP", "thinkingConfig"},
-    "ollama": {"temperature", "top_p", "num_ctx"},
-    "anthropic": {"temperature", "top_p", "thinking"},
-}
+from .routing import DEFAULTS, EXTRA_OPTIONS, SUFFIXES, go_endpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,20 +78,15 @@ class Config:
                 raise ValueError("Model discovery currently supports OpenCode Go")
             routes = values.get("model_protocols", {})
             if not isinstance(routes, dict) or not all(
-                isinstance(k, str) and v in {"chat", "responses", "anthropic"}
-                for k, v in routes.items()
+                isinstance(k, str) and v in SUFFIXES for k, v in routes.items()
             ):
                 raise ValueError("model_protocols must map model IDs to supported Go protocols")
-            # Go exposes multiple protocols. Do not infer one from the model's name.
-            if backend == "opencode_go" and values["protocol"] == "responses":
+            # Initial configuration and later selections use the same endpoint rules.
+            if backend == "opencode_go":
+                if values["protocol"] not in SUFFIXES:
+                    raise ValueError("Unsupported Go protocol")
                 if "endpoint" not in raw:
-                    values["endpoint"] = "https://opencode.ai/zen/go/v1/responses"
-            if (
-                backend == "opencode_go"
-                and values["protocol"] == "anthropic"
-                and "endpoint" not in raw
-            ):
-                values["endpoint"] = "https://opencode.ai/zen/go/v1/messages"
+                    values["endpoint"] = go_endpoint(endpoint, values["protocol"])
             if not isinstance(values.get("model"), str) or not values["model"].strip():
                 raise ValueError(f"Set an explicit model in profile {name}")
             if values["protocol"] not in EXTRA_OPTIONS:

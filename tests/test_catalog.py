@@ -5,7 +5,7 @@ import pytest
 from flask import Flask
 from test_service import ScriptedTransport
 
-from ai_overview.catalog import ModelCatalog, selected_profile
+from ai_overview.catalog import ModelCatalog
 from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
 from ai_overview.models import Turn
@@ -69,18 +69,6 @@ def test_failed_discovery_preserves_configured_model() -> None:
     assert len(calls) == 1
 
 
-def test_selected_profile_changes_protocol_and_keeps_credentials() -> None:
-    c = config()
-    p = replace(c.profiles["go"], api_key="secret", options={"reasoning_effort": "low"})
-    state = replace(initial_state("q?", (), "go"), model="minimax-m3", protocol="anthropic")
-    selected = selected_profile(p, state)
-    assert selected.endpoint == "https://opencode.ai/zen/go/v1/messages"
-    assert selected.protocol == "anthropic"
-    assert selected.api_key == "secret"
-    assert selected.options == {}
-    assert "secret" not in repr(selected)
-
-
 def test_selection_requires_initial_state_and_known_model() -> None:
     c = config()
     catalog = ModelCatalog(c)
@@ -104,7 +92,9 @@ def test_selection_endpoints_sign_model_without_exposing_keys(
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-secret-value")
     c = config()
     signer = StateSigner("s" * 32)
-    service = GenerationService(c, signer, ScriptedTransport([]), lambda query, options: ())
+    service = GenerationService(
+        c, signer, ScriptedTransport([]), lambda query, options, timeout: ()
+    )
     app = Flask(__name__)
     register(app, service)
     client = app.test_client()
@@ -138,14 +128,3 @@ def test_catalog_response_limits() -> None:
     for chunks in [[b"a" * 1_000_001], [b"[]"], [b"invalid"]]:
         with pytest.raises(OverviewError):
             read_catalog(chunks)
-
-
-@pytest.mark.parametrize("model,protocol", [("glm-5.2", "chat"), ("minimax-m3", "anthropic")])
-def test_thinking_control_is_scoped_to_configured_model(model: str, protocol: str) -> None:
-    p = replace(config().profiles["go"], options={"thinking": {"type": "disabled"}})
-    initial = initial_state("q?", (), "go")
-    assert selected_profile(p, initial).options == p.options
-    pinned = replace(initial, model=p.model, protocol=p.protocol)
-    assert selected_profile(p, pinned).options == p.options
-    switched = replace(initial, model=model, protocol=protocol)
-    assert selected_profile(p, switched).options == {}

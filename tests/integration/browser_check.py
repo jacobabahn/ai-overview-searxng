@@ -156,9 +156,63 @@ def main() -> None:
 
         page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
         expect(page.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
-        page.get_by_role("button", name="Stop", exact=True).click()
+        page.get_by_role("button", name="Stop generating", exact=True).click()
         expect(page.locator(".ai-status")).to_have_text("Stopped. This answer is incomplete.")
         expect(page.get_by_role("button", name="Retry")).to_be_visible()
+        # Selection and its restart reserve one operation, even if Retry is dispatched
+        # programmatically while the selection response is delayed.
+        pending_selection: list[Route] = []
+        pending_generation: list[Route] = []
+        page.route("**/ai-overview/select", lambda route: pending_selection.append(route))
+        page.route("**/ai-overview/stream", lambda route: pending_generation.append(route))
+        panel.get_by_role("button", name="Overview options").click()
+        panel.get_by_role("button", name="Model settings").click()
+        expect(picker).to_be_enabled()
+        target = picker.locator("option", has_text="fixture / fixture").get_attribute("value")
+        assert target is not None
+        picker.select_option(target)
+        with page.expect_request(lambda request: request.url.endswith("/select")):
+            panel.get_by_role("button", name="Use model and restart").click()
+        expect(panel.get_by_role("button", name="Retry")).to_be_disabled()
+        panel.locator(".ai-retry").evaluate(
+            "button => button.dispatchEvent(new MouseEvent('click'))"
+        )
+        assert not pending_generation
+        assert len(pending_selection) == 1
+        pending_selection.pop().fulfill(
+            content_type="application/json", body='{"token":"selected-search"}'
+        )
+        expect(panel).to_have_attribute("data-loading", "true")
+        # Flush browser tasks before inspecting the routed generation request.
+        page.wait_for_function("document.querySelector('.ai-stop').hidden === false")
+        assert len(pending_generation) == 1
+        generation = pending_generation.pop()
+        assert generation.request.post_data_json == {"token": "selected-search"}
+        generation.fulfill(
+            content_type="text/event-stream",
+            body='event: text_delta\ndata: {"text":"Selected model answer"}\n\n'
+            'event: done\ndata: {"token":"selected-continuation","can_follow_up":true}\n\n',
+        )
+        expect(panel.locator(".ai-status")).to_have_text("")
+        expect(panel.locator(".ai-answer")).to_have_count(1)
+        expect(panel.locator(".ai-answer")).to_have_text("Selected model answer")
+        panel.get_by_role("button", name="More", exact=True).click()
+        panel.get_by_label("Ask a follow-up").fill("Why?")
+        with page.expect_request(lambda request: request.url.endswith("/stream")):
+            panel.get_by_role("button", name="Ask", exact=True).click()
+        assert len(pending_generation) == 1
+        followup = pending_generation.pop()
+        assert followup.request.post_data_json == {
+            "token": "selected-continuation",
+            "question": "Why?",
+        }
+        followup.fulfill(
+            content_type="text/event-stream",
+            body='event: done\ndata: {"token":"next","can_follow_up":true}\n\n',
+        )
+        expect(panel.locator(".ai-status")).to_have_text("")
+        page.unroute("**/ai-overview/select")
+        page.unroute("**/ai-overview/stream")
         # Long answers disclose on demand and on keyboard focus into citations.
         long_answer = "Air scatters blue light more strongly than red light. " * 20 + "[1]"
         stream = "".join(

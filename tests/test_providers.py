@@ -22,7 +22,13 @@ class RecordingTransport:
 
     @contextmanager
     def stream(
-        self, url: str, headers: dict[str, str], body: dict[str, Any], profile: Profile
+        self,
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> Iterator[Iterable[bytes]]:
         self.calls.append((url, headers, body))
         try:
@@ -228,3 +234,27 @@ def test_invalid_chat_thinking_control(thinking: Any) -> None:
                 },
             }
         )
+
+
+def test_http_transport_caps_io_timeout_to_remaining_turn_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    monkeypatch.setattr("ai_overview.providers.transport.time.monotonic", lambda: 100.0)
+    observed: list[httpx.Timeout] = []
+
+    def fail(client: httpx.Client, *args: Any, **kwargs: Any) -> None:
+        observed.append(client.timeout)
+        raise httpx.ReadTimeout("upstream details")
+
+    monkeypatch.setattr(httpx.Client, "stream", fail)
+    with pytest.raises(OverviewError) as caught:
+        with HTTPXTransport().stream("http://localhost", {}, {}, profile(), deadline=102.5):
+            pass
+    assert caught.value.code == "timeout"
+    assert observed[0].read == observed[0].connect == 2.5
+    with pytest.raises(OverviewError):
+        with HTTPXTransport().stream("http://localhost", {}, {}, profile(), deadline=100):
+            pass
+    assert len(observed) == 1

@@ -71,7 +71,7 @@ class SXNGPlugin(Plugin):
             self.log.warning("Could not prepare AI overview (%s)", type(error).__name__)
             return []
 
-    def retrieve(self, query: str, options: SearchOptions) -> tuple[Source, ...]:
+    def retrieve(self, query: str, options: SearchOptions, timeout: float) -> tuple[Source, ...]:
         from searx.search import Search  # ty: ignore[unresolved-import]
         from searx.search.models import EngineRef, SearchQuery  # ty: ignore[unresolved-import]
 
@@ -84,7 +84,7 @@ class SXNGPlugin(Plugin):
             safesearch=options.safesearch,
             time_range=options.time_range,
             pageno=1,
-            timeout_limit=10,
+            timeout_limit=min(10, timeout),
         )
         results = Search(sq).search().get_ordered_results()
         assert self.service is not None

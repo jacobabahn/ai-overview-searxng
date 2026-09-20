@@ -5,7 +5,7 @@ import secrets
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Optional
 
 from flask import Flask
 
@@ -38,6 +38,8 @@ class FixtureTransport:
         headers: dict[str, str],
         body: dict[str, Any],
         profile: Profile,
+        *,
+        deadline: Optional[float] = None,
     ) -> Iterator[Iterable[bytes]]:
         def chunks() -> Iterator[bytes]:
             messages = body.get("messages", body.get("input", []))
@@ -80,7 +82,7 @@ def create_app() -> Flask:
     )
     sources = build_sources(FIXTURES)
 
-    def retrieve(query: str, options: SearchOptions) -> tuple[Source, ...]:
+    def retrieve(query: str, options: SearchOptions, timeout: float) -> tuple[Source, ...]:
         return sources
 
     service = GenerationService(

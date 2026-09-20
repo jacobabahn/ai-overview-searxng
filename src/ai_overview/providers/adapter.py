@@ -7,7 +7,7 @@ from ..config import Profile
 from ..errors import OverviewError
 from ..models import Message
 from .parsing import json_object, lines, sse
-from .transport import Transport
+from .transport import Transport, bounded
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,12 +106,16 @@ class Provider:
         messages: list[Message],
         session: str,
         max_tokens: Optional[int] = None,
+        *,
+        deadline: Optional[float] = None,
     ) -> Generator[str, None, None]:
         url, headers, body = self.request(messages, session, max_tokens)
         protocol = self.profile.protocol
         byte_count = 0
         anthropic_finished = False
-        with self.transport.stream(url, headers, body, self.profile) as chunks:
+        with self.transport.stream(url, headers, body, self.profile, deadline=deadline) as chunks:
+            if deadline is not None:
+                chunks = bounded(chunks, deadline)
             frames = lines(chunks) if protocol == "ollama" else sse(chunks)
             for frame in frames:
                 if not frame.strip():
