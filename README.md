@@ -134,6 +134,26 @@ go in validated `options`; supported fields are listed in `config.py`.
 `planning_max_output_tokens` separately sets the follow-up planning budget
 (default 1,200), including any reasoning tokens counted by the provider.
 
+For chat models supporting DeepSeek's thinking control, configure it in the
+profile's `options` in `overview.yml` and restart SearXNG:
+
+```yaml
+options:
+  thinking:
+    type: disabled  # enabled to turn thinking on; omit to use the provider default
+```
+
+This applies to both overview and follow-up planning requests. The field follows
+[DeepSeek's API](https://api-docs.deepseek.com/guides/thinking_mode/); support through
+other providers/gateways must be verified. It is not a universal chat option.
+The model picker does not carry `thinking` to a different model or protocol;
+use a separate configured profile to customize that model. Existing reasoning
+controls for Responses, Gemini, and Anthropic remain available in `options`.
+
+Overviews aim for 100–180 words, fewer for simple questions, with more detail when
+needed or requested. Default-model generation starts while the model catalog loads
+in the background. Restoring a different saved model still waits for validation.
+
 Go requests identify this extension honestly and include a stable conversation
 session header. Its documentation describes coding-agent traffic as the intended
 workload; general search synthesis is not established as supported usage.

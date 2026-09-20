@@ -19,7 +19,7 @@ DEFAULTS = {
     "local": ("chat", "http://localhost:1234/v1/chat/completions", None),
 }
 EXTRA_OPTIONS = {
-    "chat": {"temperature", "top_p", "reasoning_effort"},
+    "chat": {"temperature", "top_p", "reasoning_effort", "thinking"},
     "responses": {"temperature", "top_p", "reasoning"},
     "gemini": {"temperature", "topP", "thinkingConfig"},
     "ollama": {"temperature", "top_p", "num_ctx"},
@@ -147,6 +147,14 @@ class Config:
                 raise ValueError("Transport headers cannot be overridden")
             if not isinstance(options, dict) or set(options) - EXTRA_OPTIONS[values["protocol"]]:
                 raise ValueError(f"Unsupported provider option in profile {name}")
+            if values["protocol"] == "chat" and "thinking" in options:
+                thinking = options["thinking"]
+                if (
+                    not isinstance(thinking, dict)
+                    or set(thinking) != {"type"}
+                    or thinking["type"] not in ("enabled", "disabled")
+                ):
+                    raise ValueError("Chat thinking must contain type: enabled or disabled")
             values["api_key"] = os.getenv(key_env, "") if key_env else ""
             profiles[name] = Profile(**values)
         default = data.get("default_profile")

@@ -191,3 +191,40 @@ def test_http_transport_timeout_is_sanitized(monkeypatch: pytest.MonkeyPatch) ->
             pass
     assert caught.value.code == "timeout"
     assert "secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize("mode", ["enabled", "disabled"])
+def test_chat_thinking_control_reaches_provider(mode: str) -> None:
+    config = Config.from_dict(
+        {
+            "default_profile": "test",
+            "profiles": {
+                "test": {
+                    "backend": "local",
+                    "model": "deepseek-v4-flash",
+                    "options": {"thinking": {"type": mode}},
+                }
+            },
+        }
+    )
+    transport = RecordingTransport(payload("chat"))
+    p = config.profiles["test"]
+    assert "".join(Provider(p, transport).stream([Message("user", "q")], "s")) == "café [1]"
+    assert transport.calls[0][2]["thinking"] == {"type": mode}
+
+
+@pytest.mark.parametrize("thinking", [False, None, {}, {"type": "auto"}, {"type": []}])
+def test_invalid_chat_thinking_control(thinking: Any) -> None:
+    with pytest.raises(ValueError, match="Chat thinking"):
+        Config.from_dict(
+            {
+                "default_profile": "test",
+                "profiles": {
+                    "test": {
+                        "backend": "local",
+                        "model": "test",
+                        "options": {"thinking": thinking},
+                    }
+                },
+            }
+        )

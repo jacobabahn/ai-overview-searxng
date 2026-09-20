@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import httpx
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import Route, expect, sync_playwright
 
 
 def main() -> None:
@@ -26,10 +26,18 @@ def main() -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 1000})
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
+        # A stalled catalog must not block the default overview.
+        pending_catalog: list[Route] = []
+        page.route("**/ai-overview/models", lambda route: pending_catalog.append(route))
         page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
         panel = page.locator(".ai-overview")
         expect(panel).to_be_visible()
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        assert len(pending_catalog) == 1
+        expect(panel.get_by_label("Overview model")).to_be_disabled()
+        pending_catalog.pop().continue_()
+        page.unroute("**/ai-overview/models")
+        expect(panel.get_by_label("Overview model")).to_be_enabled()
         expect(panel.locator(".ai-answer a")).to_have_count(2)
         expect(page.locator(".ai-prototype-switcher")).to_have_count(0)
         expect(panel.locator("h2")).to_have_text("✦AI Summary")

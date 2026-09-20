@@ -16,6 +16,8 @@ from .state import StateSigner
 Retriever = Callable[[str, SearchOptions], tuple[Source, ...]]
 
 ANSWER_PROMPT = """Write a concise search overview using only the supplied search snippets.
+Lead with the direct answer. Aim for 100–180 words; use fewer for simple questions.
+Go longer only when the question requires it or the user requests detail. Skip preambles.
 Use plain text paragraphs and optional simple bullet lists. Cite factual claims using
 numeric source identifiers like [1] or [1, 2]. Cite only this turn's supplied sources.
 Do not invent URLs, facts, or citations. If evidence is insufficient, say what is missing.

@@ -138,3 +138,14 @@ def test_catalog_response_limits() -> None:
     for chunks in [[b"a" * 1_000_001], [b"[]"], [b"invalid"]]:
         with pytest.raises(OverviewError):
             read_catalog(chunks)
+
+
+@pytest.mark.parametrize("model,protocol", [("glm-5.2", "chat"), ("minimax-m3", "anthropic")])
+def test_thinking_control_is_scoped_to_configured_model(model: str, protocol: str) -> None:
+    p = replace(config().profiles["go"], options={"thinking": {"type": "disabled"}})
+    initial = initial_state("q?", (), "go")
+    assert selected_profile(p, initial).options == p.options
+    pinned = replace(initial, model=p.model, protocol=p.protocol)
+    assert selected_profile(p, pinned).options == p.options
+    switched = replace(initial, model=model, protocol=protocol)
+    assert selected_profile(p, switched).options == {}

@@ -439,13 +439,19 @@ function mount(panel) {
   }
   async function start() {
     if (picker) {
-      await loadModels();
+      const modelsReady = loadModels();
       try {
         const saved = JSON.parse(localStorage.getItem(selectionKey) || "null");
-        const choice = choices.find(c => c.available && c.profile === saved?.profile && c.model === saved?.model);
-        if (choice && (choice.profile !== selected.profile || choice.model !== selected.model)) {
-          await chooseModel(choice);
-          picker.value = String(choices.indexOf(choice));
+        // The configured model is already signed into the page. Only a different
+        // saved selection needs catalog validation before generation can start.
+        if (saved && typeof saved.profile === "string" && typeof saved.model === "string" &&
+            (saved.profile !== selected.profile || saved.model !== selected.model)) {
+          await modelsReady;
+          const choice = choices.find(c => c.available && c.profile === saved.profile && c.model === saved.model);
+          if (choice) {
+            await chooseModel(choice);
+            picker.value = String(choices.indexOf(choice));
+          }
         }
       } catch { /* Use the configured default if saved preferences are unavailable. */ }
     }

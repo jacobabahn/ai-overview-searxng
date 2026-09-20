@@ -106,7 +106,13 @@ def selected_profile(profile: Profile, state: Conversation) -> Profile:
         model=state.model,
         protocol=protocol,
         endpoint=endpoint,
-        options={k: v for k, v in profile.options.items() if k in EXTRA_OPTIONS[protocol]},
+        options={
+            k: v
+            for k, v in profile.options.items()
+            if k in EXTRA_OPTIONS[protocol]
+            # Thinking payloads are model-specific, even across chat endpoints.
+            and (k != "thinking" or (state.model == profile.model and protocol == profile.protocol))
+        },
     )
 
 

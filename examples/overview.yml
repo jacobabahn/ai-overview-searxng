@@ -45,5 +45,9 @@ profiles:
     model: deepseek-v4-flash
     api_key_env: OPENCODE_GO_API_KEY
     discover_models: true
+    # Optional for models/gateways supporting DeepSeek's chat thinking control:
+    # options:
+    #   thinking:
+    #     type: disabled  # enabled, or omit to use the provider default
     # With model_picker: true, fetch models from the Go catalog.
     # protocol: responses  # Select for Go models requiring the Responses endpoint.
