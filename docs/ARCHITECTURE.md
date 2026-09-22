@@ -147,10 +147,14 @@ Use `fetch` with a POST body and streaming SSE response. Events are `status`,
 `sources`, `text_delta`, `done`, and `error`. A `done` event includes the next
 signed continuation. AbortController handles Stop and page navigation.
 
-Render model output as text, with validated numeric citations converted to
-links. No model-provided HTML or arbitrary Markdown links. Display partial text
-on failure with an explicit interrupted/failed status. Screen readers receive
-status updates rather than announcements for every token.
+Render a limited Markdown subset with DOM nodes: paragraphs, headings, lists,
+emphasis, blockquotes, and code. Marked supplies the lexer; model-provided HTML
+stays literal text, and Markdown links display only their labels. Validated
+numeric citations become source links in prose, never in code. Code blocks offer
+copy controls and syntax highlighting through vendored Highlight.js grammars.
+See [Markdown rendering](development.md#markdown-rendering) for dependency and
+rendering details. Display partial answers on failure with an explicit status.
+Screen readers receive status updates rather than announcements for every token.
 
 Visual direction: inherit SearXNG typography and CSS colors; fallbacks are white
 `#ffffff`, text `#222222`, muted text `#555555`, link blue `#3050ff`, and border

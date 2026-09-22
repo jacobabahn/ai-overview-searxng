@@ -2,7 +2,9 @@
 
 Streaming answers with source citations and conversational follow-ups, inside
 SearXNG's Simple theme. End a search with `?` to generate an overview from search
-snippets. Follow-up questions can retrieve fresh results when needed.
+snippets. Follow-up questions can retrieve fresh results when needed. Answers
+support Markdown formatting, source citations, and copyable code blocks with
+syntax highlighting.
 
 **Early-stage software for personal/private instances.** Supports Ollama, local
 OpenAI-compatible servers, OpenAI, Gemini, OpenRouter, and OpenCode Go. Requires
@@ -64,7 +66,9 @@ reach it. The Compose example provides `host.docker.internal`; bind the model
 server to an address reachable from the container.
 
 For a non-container installation, install this package into SearXNG's Python
-environment and register `ai_overview.plugin.SXNGPlugin` in settings.
+environment and register `ai_overview.plugin.SXNGPlugin` in settings. The plugin
+reads `/etc/searxng/overview.yml` by default; set `AI_OVERVIEW_CONFIG` in the
+SearXNG process environment to use another path.
 
 ## Configure providers
 
@@ -83,16 +87,17 @@ and conversation context. A hosted provider therefore receives that data even
 when SearXNG itself is self-hosted. Local model profiles can keep generation on
 your own infrastructure.
 
-
 - Only a trailing `?` after whitespace trimming triggers initial generation.
   Only HTML, first-page, General-category results are eligible.
 - Sources are deduplicated and bounded snippets; pages are not fetched.
 - Follow-up planning adds one model request. It uses the same profile; a factual
   follow-up can add one internal SearXNG search with the original engines,
   language, safe-search setting, and time filter.
-- Model output is rendered as text. Numeric citations link to supplied sources;
-  arbitrary model HTML and Markdown links are not rendered. Correct source IDs
-  do not by themselves guarantee that a claim is supported.
+- Answers render a limited Markdown subset: paragraphs, headings, lists,
+  emphasis, blockquotes, and code. Model-provided HTML stays literal text;
+  Markdown links display their labels without becoming clickable. Numeric
+  citations link to supplied sources, but a valid source ID does not guarantee
+  that a claim is supported.
 - State is signed, readable data held in page memory. It is not saved to the URL,
   local storage, or a conversation database. Reloading starts a new conversation.
   Tokens expire and are replayable until expiry. This targets private instances.
@@ -105,9 +110,21 @@ your own infrastructure.
 - If a reverse proxy buffers SSE, disable buffering for `/ai-overview/stream`
   and allow a read timeout longer than the configured generation timeout.
 
-
 Public-instance admission controls, full-page retrieval, persistent conversations,
 and systematic answer-quality evaluation are not implemented.
+
+## Troubleshooting
+
+- **No overview panel:** use the Simple theme, enable **AI overview** in
+  Preferences, and search the first page of General results with a trailing `?`.
+  Check SearXNG logs for configuration errors if the panel still does not appear.
+- **Configuration fails:** check that the mounted YAML is readable, the default
+  profile exists, and `server.secret_key` is a strong random value of at least
+  24 characters. Restart SearXNG after changing configuration.
+- **Local model connection fails:** check the endpoint from inside the container
+  and allow HTTP in the dedicated `ai_overview` network for HTTP endpoints.
+- **Answer arrives all at once:** check whether your reverse proxy buffers the
+  streaming endpoint; see the proxy guidance above.
 
 ## Contributing
 
