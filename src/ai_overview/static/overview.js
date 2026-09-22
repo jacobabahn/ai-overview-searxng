@@ -117,34 +117,49 @@ function mount(panel) {
       status.hidden = false;
     }
   });
-  const settingsToggle = panel.querySelector(".ai-settings-toggle");
-  const settings = panel.querySelector(".ai-model-settings");
   const optionsToggle = panel.querySelector(".ai-options-toggle");
   const options = panel.querySelector(".ai-options");
   const regenerate = panel.querySelector(".ai-regenerate");
   const preview = panel.querySelector(".ai-collapsed-preview");
   const applyModel = panel.querySelector(".ai-apply-model");
   const picker = panel.querySelector(".ai-model");
-  function closeOptions() {
+  function resetDraft() {
+    if (!picker) return;
+    const {choices, selected} = conversation.state;
+    if (choices.length) picker.value = String(choices.findIndex(c => c.profile === selected.profile && c.model === selected.model));
+    updateControls(conversation.state);
+  }
+  function closeOptions(restoreFocus = false) {
     options.hidden = true;
     optionsToggle.setAttribute("aria-expanded", "false");
+    if (restoreFocus) optionsToggle.focus();
   }
   optionsToggle.addEventListener("click", () => {
-    options.hidden = !options.hidden;
-    optionsToggle.setAttribute("aria-expanded", String(!options.hidden));
+    if (!options.hidden) return closeOptions(true);
+    resetDraft();
+    options.hidden = false;
+    optionsToggle.setAttribute("aria-expanded", "true");
+    options.querySelector(".ai-settings-close").focus();
+  });
+  options.querySelector(".ai-settings-close").addEventListener("click", () => closeOptions(true));
+  document.addEventListener("focusin", event => {
+    if (!options.hidden && !options.contains(event.target) && !optionsToggle.contains(event.target)) closeOptions();
   });
   document.addEventListener("click", event => {
-    if (!options.contains(event.target) && !optionsToggle.contains(event.target)) closeOptions();
+    if (!options.hidden && !options.contains(event.target) && !optionsToggle.contains(event.target)) {
+      closeOptions(options.contains(document.activeElement));
+    }
   });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !options.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeOptions(true);
+    }
+  }, true);
   panel.addEventListener("keydown", event => {
     // Keep the host's global Escape shortcut from moving focus to search.
     if (event.key === "Escape") event.stopPropagation();
-    if (event.key === "Escape" && (!options.hidden || (settings && !settings.hidden))) {
-      event.preventDefault();
-      closeOptions();
-      if (settings) { settings.hidden = true; settingsToggle.setAttribute("aria-expanded", "false"); }
-      optionsToggle.focus();
-    }
   });
   const reloadModels = panel.querySelector(".ai-refresh-models");
   const modelStatus = panel.querySelector(".ai-model-status");
@@ -164,12 +179,20 @@ function mount(panel) {
     retry.disabled = state.busy;
     input.disabled = state.busy;
     submit.disabled = state.busy;
-    regenerate.disabled = state.busy || state.loadingModels;
+    regenerate.disabled = state.busy;
+    panel.querySelector(".ai-settings-busy").hidden = !state.busy;
+    panel.querySelector(".ai-settings-busy").textContent = state.phase === "selecting"
+      ? "Restarting overview…" : "Wait for the answer to finish, or stop generating to restart.";
     form.hidden = !state.canFollowUp || !expanded;
     if (picker) {
       picker.disabled = state.busy || state.loadingModels || !state.choices.length;
       reloadModels.disabled = state.busy || state.loadingModels;
-      applyModel.disabled = picker.disabled;
+      const choice = picker.value === "" ? undefined : state.choices[Number(picker.value)];
+      const changed = choice && (choice.profile !== state.selected.profile || choice.model !== state.selected.model);
+      applyModel.hidden = !changed;
+      regenerate.hidden = Boolean(changed);
+      applyModel.disabled = picker.disabled || !choice?.available || !changed;
+      reloadModels.textContent = state.loadingModels ? "Refreshing…" : "Refresh list";
     }
   }
 
@@ -186,22 +209,17 @@ function mount(panel) {
   });
 
   if (picker) {
-    settingsToggle.addEventListener("click", () => {
-      settings.hidden = !settings.hidden;
-      settingsToggle.setAttribute("aria-expanded", String(!settings.hidden));
-      closeOptions();
-      if (!settings.hidden && !picker.disabled) picker.focus();
-    });
+    picker.addEventListener("change", () => updateControls(conversation.state));
     reloadModels.addEventListener("click", () => conversation.loadModels());
     applyModel.addEventListener("click", async () => {
       const choice = conversation.state.choices[Number(picker.value)];
-      if (!choice?.available) return;
+      if (applyModel.disabled || !choice?.available) return;
       try {
         await conversation.restart(choice);
       } catch (error) {
         modelStatus.textContent = error.message;
-        const {choices, selected} = conversation.state;
-        picker.value = String(choices.findIndex(c => c.profile === selected.profile && c.model === selected.model));
+        updateControls(conversation.state);
+        if (!options.hidden && document.activeElement === document.body) applyModel.focus();
       }
     });
   }
@@ -278,18 +296,19 @@ function mount(panel) {
         picker.append(option);
       }
       modelStatus.textContent = event.data.warnings.join(" ");
+      updateControls(state);
     }
     if (event.name === "reset") {
       turns.replaceChildren();
       activeTurn = failedTurn = null;
       input.value = "";
       if (picker) {
-        panel.querySelector(".ai-current-model").textContent = `Current model: ${state.selected.model}`;
+        panel.querySelector(".ai-current-model").textContent = `Current: ${state.selected.model}`;
         picker.value = String(state.choices.findIndex(c => c.profile === state.selected.profile && c.model === state.selected.model));
         try { localStorage.setItem(selectionKey, JSON.stringify(state.selected)); } catch { /* Storage is optional. */ }
-        settings.hidden = true;
-        settingsToggle.setAttribute("aria-expanded", "false");
+        updateControls(state);
       }
+      closeOptions();
       showConversation();
     }
     if (event.name === "turn_start") beginTurn(event.data.question);

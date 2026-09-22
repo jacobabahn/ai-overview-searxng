@@ -11,30 +11,38 @@
         <button type="button" class="ai-stop" aria-label="Stop generating" title="Stop generating" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
         <button type="button" class="ai-copy" aria-label="Copy answer" title="Copy answer" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button>
       </div>
-      <button type="button" class="ai-options-toggle" aria-label="Overview options" aria-expanded="false" title="Overview options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
+      <button type="button" class="ai-options-toggle" aria-label="Summary settings" aria-expanded="false" aria-controls="ai-summary-settings" title="Summary settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
       <button type="button" class="ai-collapse" aria-label="Collapse overview" aria-expanded="true" title="Collapse overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
     </div>
   </header>
-  <div class="ai-options" hidden>
-    {% if model_picker %}
-    <button type="button" class="ai-settings-toggle" aria-expanded="false">Model settings</button>
-    {% endif %}
-    <button type="button" class="ai-regenerate">Regenerate overview</button>
-  </div>
-  {% if model_picker %}
-  <div class="ai-model-settings" hidden>
-    <p class="ai-current-model">Current model: {{ model }}</p>
-    <label>Model <select class="ai-model" aria-label="Overview model" disabled>
-      <option>{{ profile }} / {{ model }}</option>
-    </select></label>
-    <div class="ai-settings-actions">
-      <button type="button" class="ai-apply-model" disabled>Use model and restart</button>
-      <button type="button" class="ai-refresh-models">Reload list</button>
+  <div class="ai-options" id="ai-summary-settings" role="region" aria-label="Summary settings" hidden>
+    <div class="ai-settings-heading">
+      <h3>Summary settings</h3>
+      <button type="button" class="ai-settings-close" aria-label="Close settings" title="Close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </div>
-    <small>Restarts the overview and clears follow-ups.</small>
-    <p class="ai-model-status" role="status" aria-live="polite"></p>
+    {% if model_picker %}
+    <div class="ai-model-settings">
+      <div class="ai-model-label">
+        <label for="ai-summary-model">Model</label>
+        <button type="button" class="ai-refresh-models">Refresh list</button>
+      </div>
+      <select class="ai-model" id="ai-summary-model" aria-label="Overview model" aria-describedby="ai-model-help" disabled>
+        <option>{{ profile }} / {{ model }}</option>
+      </select>
+      <p class="ai-current-model">Current: {{ model }}</p>
+      <p id="ai-model-help" class="ai-model-help">Changes apply when you restart. Your model choice is remembered in this browser.</p>
+      <p class="ai-model-status" role="status" aria-live="polite"></p>
+    </div>
+    {% endif %}
+    <div class="ai-settings-footer">
+      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary and clears follow-ups.</p>
+      <button type="button" class="ai-regenerate" aria-describedby="ai-restart-help">Regenerate overview</button>
+      {% if model_picker %}
+      <button type="button" class="ai-apply-model" aria-describedby="ai-restart-help" disabled hidden>Use model and restart</button>
+      {% endif %}
+      <p class="ai-settings-busy" role="status" hidden>Wait for the answer to finish, or stop generating to restart.</p>
+    </div>
   </div>
-  {% endif %}
   <p class="ai-collapsed-preview" hidden></p>
   <div class="ai-content">
     <p class="ai-provenance">Based on search snippets</p>
