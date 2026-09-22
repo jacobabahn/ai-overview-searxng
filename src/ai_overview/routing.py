@@ -27,7 +27,7 @@ EXTRA_OPTIONS = {
     "chat": {"temperature", "top_p", "reasoning_effort", "thinking"},
     "responses": {"temperature", "top_p", "reasoning"},
     "gemini": {"temperature", "topP", "thinkingConfig"},
-    "ollama": {"temperature", "top_p", "num_ctx"},
+    "ollama": {"temperature", "top_p", "num_ctx", "think"},
     "anthropic": {"temperature", "top_p", "thinking"},
 }
 

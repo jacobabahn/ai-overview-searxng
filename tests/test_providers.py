@@ -258,3 +258,39 @@ def test_http_transport_caps_io_timeout_to_remaining_turn_budget(
         with HTTPXTransport().stream("http://localhost", {}, {}, profile(), deadline=100):
             pass
     assert len(observed) == 1
+
+
+@pytest.mark.parametrize("think", [False, True])
+def test_ollama_thinking_control_reaches_overview_and_planner(think: bool) -> None:
+    p = Config.from_dict(
+        {
+            "default_profile": "test",
+            "profiles": {
+                "test": {
+                    "backend": "ollama",
+                    "model": "qwen3.5:4b",
+                    "options": {"think": think, "num_ctx": 8192},
+                }
+            },
+        }
+    ).profiles["test"]
+    provider = Provider(p, RecordingTransport(payload("ollama")))
+    for limit in (None, 256):
+        _, _, body = provider.request([Message("user", "question")], "session", limit)
+        assert body["think"] is think
+        assert body["options"] == {"num_ctx": 8192, "num_predict": limit or p.max_output_tokens}
+    _, _, default_body = Provider(profile("ollama"), provider.transport).request([], "session")
+    assert "think" not in default_body
+
+
+@pytest.mark.parametrize("think", ["false", None, 0, {}, []])
+def test_invalid_ollama_thinking_control(think: Any) -> None:
+    with pytest.raises(ValueError, match="Ollama think"):
+        Config.from_dict(
+            {
+                "default_profile": "test",
+                "profiles": {
+                    "test": {"backend": "ollama", "model": "test", "options": {"think": think}}
+                },
+            }
+        )

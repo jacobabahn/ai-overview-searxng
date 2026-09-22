@@ -64,8 +64,11 @@ class Provider:
                 "model": p.model,
                 "messages": [asdict(m) for m in messages],
                 "stream": True,
-                "options": {**p.options, "num_predict": limit},
+                "options": {k: v for k, v in p.options.items() if k != "think"},
             }
+            body["options"]["num_predict"] = limit
+            if "think" in p.options:
+                body["think"] = p.options["think"]
         elif p.protocol == "anthropic":
             headers.pop("Authorization", None)
             headers["x-api-key"] = p.api_key

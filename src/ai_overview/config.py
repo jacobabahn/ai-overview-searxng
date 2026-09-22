@@ -124,6 +124,9 @@ class Config:
                 raise ValueError("Transport headers cannot be overridden")
             if not isinstance(options, dict) or set(options) - EXTRA_OPTIONS[values["protocol"]]:
                 raise ValueError(f"Unsupported provider option in profile {name}")
+            if values["protocol"] == "ollama" and "think" in options:
+                if type(options["think"]) is not bool:
+                    raise ValueError("Ollama think must be a boolean")
             if values["protocol"] == "chat" and "thinking" in options:
                 thinking = options["thinking"]
                 if (
