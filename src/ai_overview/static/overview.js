@@ -1,4 +1,6 @@
+import {copyText} from "./clipboard.js";
 import {Conversation} from "./conversation.js";
+import {renderMarkdown} from "./markdown.js";
 export {events} from "./conversation.js";
 
 function validURL(value) {
@@ -76,6 +78,7 @@ function mount(panel) {
   let failedTurn;
   const status = panel.querySelector(".ai-status");
   const turns = panel.querySelector(".ai-turns");
+  const rawAnswers = new WeakMap();
   const stop = panel.querySelector(".ai-stop");
   const retry = panel.querySelector(".ai-retry");
   const form = panel.querySelector(".ai-follow-up");
@@ -116,7 +119,7 @@ function mount(panel) {
   }
   function updateDisclosure() {
     const answer = turns.querySelector(".ai-answer");
-    const clipped = answer && answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1;
+    const clipped = answer && (answer.querySelector(".ai-code-block") || answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1);
     const hasConversation = turns.childElementCount > 1;
     moreRow.hidden = !clipped && !hasConversation;
     more.setAttribute("aria-expanded", String(expanded));
@@ -132,15 +135,12 @@ function mount(panel) {
   more.addEventListener("click", () => expand(!expanded, true));
   copy.addEventListener("click", async () => {
     const text = [...turns.querySelectorAll("article")].map(turn => {
-      const answer = turn.querySelector(".ai-answer").cloneNode(true);
-      answer.querySelectorAll("a[data-source-id]").forEach(link => {
-        link.replaceWith(`[${link.dataset.sourceId}]`);
-      });
+      const answer = turn.querySelector(".ai-answer");
       const question = turn.querySelector(".ai-question")?.textContent;
-      return [question, answer.textContent].filter(Boolean).join("\n\n");
+      return [question, rawAnswers.get(answer) || ""].filter(Boolean).join("\n\n");
     }).join("\n\n");
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       copyStatus.textContent = "Answer copied.";
     } catch {
       copyStatus.textContent = "Could not copy. Select the answer text to copy it.";
@@ -261,7 +261,7 @@ function mount(panel) {
     collapse.setAttribute("aria-label", content.hidden ? "Expand overview" : "Collapse overview");
     collapse.title = content.hidden ? "Expand overview" : "Collapse overview";
     preview.hidden = !content.hidden;
-    preview.textContent = turns.querySelector(".ai-answer")?.textContent || status.textContent;
+    preview.textContent = rawAnswers.get(turns.querySelector(".ai-answer")) || status.textContent;
     if (!content.hidden) updateDisclosure();
   });
   stop.addEventListener("click", () => conversation.stop());
@@ -358,11 +358,13 @@ function mount(panel) {
       status.hidden = true;
       copy.disabled = false;
       activeTurn.text += event.data.text;
-      renderCitations(activeTurn.answer, activeTurn.text, activeTurn.sources);
+      rawAnswers.set(activeTurn.answer, activeTurn.text);
+      renderMarkdown(activeTurn.answer, activeTurn.text, activeTurn.sources, renderCitations, {complete: false});
       updateDisclosure();
-      preview.textContent = turns.querySelector(".ai-answer")?.textContent || "";
+      preview.textContent = rawAnswers.get(turns.querySelector(".ai-answer")) || "";
     }
     if (event.name === "turn_done") {
+      renderMarkdown(activeTurn.answer, activeTurn.text, activeTurn.sources, renderCitations);
       status.textContent = state.canFollowUp ? "" : "Start a new search to continue.";
       status.hidden = state.canFollowUp;
       input.value = "";

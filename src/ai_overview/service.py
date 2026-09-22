@@ -18,7 +18,8 @@ Retriever = Callable[[str, SearchOptions, float], tuple[Source, ...]]
 ANSWER_PROMPT = """Write a concise search overview using only the supplied search snippets.
 Lead with the direct answer. Aim for 100–180 words; use fewer for simple questions.
 Go longer only when the question requires it or the user requests detail. Skip preambles.
-Use plain text paragraphs and optional simple bullet lists. Cite factual claims using
+Use concise Markdown paragraphs, lists, bold text, and inline code when useful.
+For code examples, use fenced code blocks with a language label. Cite factual claims using
 numeric source identifiers like [1] or [1, 2]. Cite only this turn's supplied sources.
 Do not invent URLs, facts, or citations. If evidence is insufficient, say what is missing.
 Mention meaningful disagreements between sources. Snippets are not full articles.

@@ -85,11 +85,11 @@
 .ai-overview .ai-turn-status { color: var(--ai-muted); font-size: 0.85rem; margin-block: 0.75rem; }
 .ai-overview .ai-status:empty { display: none; }
 .ai-overview .ai-answer {
-  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65;
+  white-space: normal; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65;
   max-width: 72ch;
   margin-block: 0.25rem 0.5rem;
 }
-.ai-overview .ai-answer a {
+.ai-overview .ai-answer a[data-source-id] {
   display: inline-block; vertical-align: baseline; font-size: 0.75em; font-weight: 600;
   color: var(--ai-link); background: var(--ai-tint); border-radius: 0.25rem;
   text-decoration: none; text-align: center; min-width: 1.4em;
@@ -171,3 +171,58 @@
   .ai-overview .ai-overview-header { gap: 0.25rem; }
   .ai-overview .ai-header-actions { flex-shrink: 0; }
 }
+
+/* Generated Markdown shares the search typography; code gets its own scroll area. */
+.ai-overview .ai-answer p { margin: 0 0 0.75rem; white-space: pre-wrap; }
+.ai-overview .ai-answer > :last-child { margin-block-end: 0; }
+.ai-overview .ai-answer h3 { font: inherit; font-weight: 650; margin: 1rem 0 0.4rem; }
+.ai-overview .ai-answer :is(ul, ol) { margin: 0.5rem 0; padding-inline-start: 1.5rem; }
+.ai-overview .ai-answer li { margin: 0.25rem 0; }
+.ai-overview .ai-answer li p { margin: 0; }
+.ai-overview .ai-answer blockquote { margin: 0.75rem 0; padding-inline-start: 1rem; border-inline-start: 3px solid var(--ai-border); }
+.ai-overview .ai-answer code { font-family: ui-monospace, "Cascadia Code", "Liberation Mono", monospace; font-size: 0.875em; }
+.ai-overview .ai-answer :not(pre) > code { padding: 0.1rem 0.25rem; border-radius: 0.2rem; background: var(--ai-tint); }
+.ai-overview .ai-code-block { margin-block: 0.75rem; border: 1px solid var(--ai-border); border-radius: 0.5rem; overflow: hidden; }
+.ai-overview .ai-code-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-inline: 0.75rem 0.25rem; background: var(--ai-tint); font-size: 0.8rem; color: var(--ai-muted); }
+.ai-overview .ai-code-toolbar > span { overflow-wrap: anywhere; min-width: 0; }
+.ai-overview .ai-code-toolbar button { min-height: 44px; flex-shrink: 0; border: 0; font-size: inherit; }
+.ai-overview .ai-code-block pre { margin: 0; padding: 0.85rem; max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; tab-size: 4; color: var(--ai-text); background: transparent; line-height: 1.6; }
+.ai-overview .ai-code-block pre:focus-visible { outline: 2px solid var(--ai-link); outline-offset: -3px; }
+.ai-overview .ai-code-block pre code { padding: 0; background: none; white-space: inherit; }
+.ai-overview .ai-code-status { display: block; padding: 0 0.75rem 0.5rem; font-size: 0.8rem; color: var(--ai-muted); }
+.ai-overview .ai-code-status:empty,
+.ai-overview .ai-code-preview { display: none; }
+.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) :is(p, h3, ul, ol, li, blockquote) { display: inline; margin: 0; padding: 0; border: 0; white-space: normal; }
+.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) :is(p, h3, li)::after { content: " "; }
+.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) .ai-code-block { display: none; }
+.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) .ai-code-preview { display: inline; color: var(--ai-muted); }
+
+/* Scoped syntax colors follow SearXNG's explicit theme or its automatic theme. */
+.ai-overview .ai-code-block {
+  --ai-syntax-keyword: #6f42c1;
+  --ai-syntax-string: #116329;
+  --ai-syntax-value: #0550ae;
+  --ai-syntax-comment: #62666d;
+  --ai-syntax-name: #953800;
+}
+:root.theme-dark .ai-overview .ai-code-block {
+  --ai-syntax-keyword: #c5a5ff;
+  --ai-syntax-string: #8bd5a0;
+  --ai-syntax-value: #8cbcff;
+  --ai-syntax-comment: #a0a6b0;
+  --ai-syntax-name: #ffc18c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.theme-light):not(.theme-dark) .ai-overview .ai-code-block {
+    --ai-syntax-keyword: #c5a5ff;
+    --ai-syntax-string: #8bd5a0;
+    --ai-syntax-value: #8cbcff;
+    --ai-syntax-comment: #a0a6b0;
+    --ai-syntax-name: #ffc18c;
+  }
+}
+.ai-overview .ai-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta, .hljs-doctag) { color: var(--ai-syntax-keyword); }
+.ai-overview .ai-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr, .hljs-addition) { color: var(--ai-syntax-string); }
+.ai-overview .ai-code-block :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-variable, .hljs-symbol) { color: var(--ai-syntax-value); }
+.ai-overview .ai-code-block :is(.hljs-comment, .hljs-quote) { color: var(--ai-syntax-comment); }
+.ai-overview .ai-code-block :is(.hljs-title, .hljs-name, .hljs-attribute, .hljs-selector-class, .hljs-selector-id, .hljs-type) { color: var(--ai-syntax-name); }

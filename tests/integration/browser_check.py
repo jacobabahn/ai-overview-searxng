@@ -368,7 +368,10 @@ def main() -> None:
             assert last_line_has_text
         panel.get_by_role("button", name="Show full answer", exact=True).click()
         expect(answer).to_have_text(paragraph_answer)
-        assert answer.evaluate("el => getComputedStyle(el).whiteSpace") == "pre-wrap"
+        assert (
+            answer.locator("p").first.evaluate("el => getComputedStyle(el).whiteSpace")
+            == "pre-wrap"
+        )
         panel.get_by_role("button", name="Show less", exact=True).click()
         page.set_viewport_size({"width": 390, "height": 844})
         page.screenshot(path=str(output / "overview-ellipsis-fixed.png"), full_page=True)

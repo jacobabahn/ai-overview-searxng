@@ -13,6 +13,7 @@ demo:
 integration:
 	docker compose -f compose.test.yml up -d
 	uv run python tests/integration/browser_check.py
+	uv run python tests/integration/markdown_check.py
 
 integration-down:
 	docker compose -f compose.test.yml down -v

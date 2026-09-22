@@ -59,3 +59,30 @@ search content from logs and screenshots.
 - [Architecture](ARCHITECTURE.md): implementation boundaries and tradeoffs.
 - [Initial specification](SPEC.md): historical planning notes.
 - [Design audit](DESIGN_AUDIT.md): historical interface review.
+
+## Markdown rendering
+
+The browser vendors Marked 18.0.13 in `static/marked.js` with its MIT license in
+`static/marked.LICENSE.txt`, sourced from the published npm package. No CDN or
+frontend build step is needed. `markdown.js` uses only the lexer and creates DOM
+nodes for paragraphs, headings, lists, emphasis, and code. Generated HTML remains
+literal text; Markdown links render their labels without becoming clickable.
+Citations are handled only in prose, never in code. Copy answer preserves the
+original Markdown, while Copy code copies only that block's contents.
+
+When updating Marked, verify the npm archive integrity and replace both vendored
+files. Run the browser integration checks for streaming, copy behavior, and XSS.
+
+Syntax highlighting vendors the core and eight language modules from
+`@highlightjs/cdn-assets` 11.12.0, with its BSD-3-Clause license in
+`static/highlight.LICENSE.txt`. The npm archive's SHA-512 integrity is
+`KvOKXODaiFmId9xaq3xc5xCL66wVLUuOngDbO9B/kewbFTqdGbn2nJxNhN3H5R1cgDTVj6R8vH0zgiNDEGjpDw==`.
+These are unmodified ESM files, renamed `highlight-<module>.js` for packaging.
+
+`syntax.js` registers Python, JavaScript, TypeScript, XML/HTML, CSS, JSON, Bash,
+and SQL (including their registered aliases). Code stays plain while a fence is
+open; a closing fence or completed answer triggers highlighting. Unknown or
+unlabeled languages, grammar errors, and blocks over 50,000 characters fall back
+to plain text. The renderer rebuilds only text and span nodes from the escaped
+highlighting output and verifies that their text exactly matches the original.
+Highlighting never introduces executable HTML or changes clipboard contents.
