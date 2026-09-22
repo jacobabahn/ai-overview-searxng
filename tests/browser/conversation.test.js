@@ -146,3 +146,79 @@ test("aborting selection cannot reset the displayed conversation or commit its t
   work = c.run("Why?"); assert.equal(calls[2].body.token, "continuation");
   calls[2].resolve(done("next")); await work;
 });
+
+const busy = () => new Response('event: error\ndata: {"code":"busy","message":"Busy"}\n\n',
+  {status: 429, headers: {"Content-Type": "text/event-stream"}});
+
+test("busy admission retries the same turn and reserves the conversation while waiting", async t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const {conversation: c, calls, events} = harness(false);
+  let work = c.run(); calls[0].resolve(done("continuation")); await work;
+  work = c.run("Why?"); calls[1].resolve(busy()); await tick();
+  assert.equal(c.state.phase, "waiting");
+  assert.equal(c.state.busy, true);
+  assert.equal(c.state.canRetry, false);
+  await Promise.all([c.retry(), c.restart(), c.run("Other")]);
+  assert.equal(calls.length, 2);
+  t.mock.timers.tick(1999); await tick(); assert.equal(calls.length, 2);
+  t.mock.timers.tick(1);
+  const retry = await nextCall(calls, 3);
+  assert.deepEqual(retry.body, {token: "continuation", question: "Why?"});
+  retry.resolve(done("next")); await work;
+  assert.equal(c.state.busy, false);
+  assert.equal(c.state.canRetry, false);
+  assert.equal(events.filter(e => e.event.name === "turn_start").length, 2);
+  assert.equal(events.filter(e => e.event.name === "turn_error").length, 0);
+  assert.deepEqual(events.find(e => e.event.name === "waiting").event.data,
+    {attempt: 1, maxAttempts: 3, delay: 2000});
+});
+
+test("busy retries back off three times then stop, with manual retry starting a fresh budget", async t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const {conversation: c, calls, events} = harness(false);
+  let work = c.run(); calls[0].resolve(busy()); await tick();
+  for (const [index, delay] of [2000, 4000, 8000].entries()) {
+    assert.equal(c.state.phase, "waiting");
+    t.mock.timers.tick(delay);
+    const request = await nextCall(calls, index + 2);
+    request.resolve(busy()); await tick();
+  }
+  await work;
+  assert.equal(c.state.busy, false);
+  assert.equal(c.state.canRetry, true);
+  assert.match(events.findLast(e => e.event.name === "turn_error").event.data.message, /still busy/);
+  t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 4);
+  work = c.retry(); calls[4].resolve(busy()); await tick();
+  assert.equal(events.findLast(e => e.event.name === "waiting").event.data.attempt, 1);
+  t.mock.timers.tick(2000);
+  const request = await nextCall(calls, 6); request.resolve(done("next")); await work;
+});
+
+test("canceling a busy wait immediately releases it and cancels every scheduled request", async t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const {conversation: c, calls, events} = harness(false);
+  const work = c.run(); calls[0].resolve(busy()); await tick();
+  c.stop(); await work;
+  assert.equal(c.state.busy, false);
+  assert.equal(c.state.canRetry, true);
+  assert.match(events.findLast(e => e.event.name === "turn_error").event.data.message, /Waiting canceled/);
+  t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 1);
+});
+
+test("provider limits, other HTTP failures, and partial answers never auto-retry", async t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  for (const response of [
+    new Response('event: error\ndata: {"code":"provider_limit","message":"Usage limit"}\n\n',
+      {status: 429, headers: {"Content-Type": "text/event-stream"}}),
+    sse(["error", {code: "busy", message: "Upstream busy"}]),
+    new Response('event: text_delta\ndata: {"text":"Partial"}\n\nevent: error\ndata: {"code":"busy","message":"Busy"}\n\n',
+      {status: 429, headers: {"Content-Type": "text/event-stream"}}),
+    new Response("Unavailable", {status: 503}),
+  ]) {
+    const {conversation: c, calls, events} = harness(false);
+    const work = c.run(); calls[0].resolve(response); await work;
+    assert.equal(c.state.canRetry, true);
+    assert.equal(events.some(e => e.event.name === "waiting"), false);
+    t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 1);
+  }
+});

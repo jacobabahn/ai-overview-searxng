@@ -66,7 +66,10 @@ function sourceList(sources) {
     item.append(link, host, snippet);
     list.append(item);
   }
-  details.append(summary, list);
+  const provenance = document.createElement("p");
+  provenance.className = "ai-provenance";
+  provenance.textContent = "Based on search snippets";
+  details.append(summary, provenance, list);
   return details;
 }
 
@@ -81,6 +84,7 @@ function mount(panel) {
   const rawAnswers = new WeakMap();
   const stop = panel.querySelector(".ai-stop");
   const retry = panel.querySelector(".ai-retry");
+  const cancelWait = panel.querySelector(".ai-cancel-wait");
   const form = panel.querySelector(".ai-follow-up");
   const input = form.querySelector("input");
   const submit = form.querySelector("button");
@@ -205,15 +209,30 @@ function mount(panel) {
 
   function updateControls(state) {
     panel.dataset.loading = String(state.phase === "streaming");
-    stop.hidden = state.phase !== "streaming";
+    const waiting = state.phase === "waiting";
+    const cancelHadFocus = document.activeElement === cancelWait ||
+      (document.activeElement === stop && stop.getAttribute("aria-label") === "Cancel waiting");
+    panel.dataset.phase = state.phase;
+    stop.hidden = state.phase !== "streaming" && !waiting;
+    stop.setAttribute("aria-label", waiting ? "Cancel waiting" : "Stop generating");
+    stop.title = waiting ? "Cancel waiting" : "Stop generating";
+    cancelWait.hidden = !waiting;
     retry.hidden = !state.canRetry;
     retry.disabled = state.busy;
+    if (cancelHadFocus && !waiting) {
+      if (!stop.hidden) stop.focus();
+      else if (!retry.hidden && !retry.disabled) {
+        if (panel.querySelector(".ai-content").hidden) collapse.focus();
+        else retry.focus();
+      }
+    }
     input.disabled = state.busy;
     submit.disabled = state.busy;
     regenerate.disabled = state.busy;
     panel.querySelector(".ai-settings-busy").hidden = !state.busy;
     panel.querySelector(".ai-settings-busy").textContent = state.phase === "selecting"
-      ? "Restarting overview…" : "Wait for the answer to finish, or stop generating to restart.";
+      ? "Restarting overview…" : waiting ? "Cancel waiting to change models or restart."
+        : "Wait for the answer to finish, or stop generating to restart.";
     updateDisclosure();
     if (picker) {
       picker.disabled = state.busy || state.loadingModels || !state.choices.length;
@@ -265,6 +284,7 @@ function mount(panel) {
     if (!content.hidden) updateDisclosure();
   });
   stop.addEventListener("click", () => conversation.stop());
+  cancelWait.addEventListener("click", () => conversation.stop());
   window.addEventListener("pagehide", () => conversation.stop());
   retry.addEventListener("click", () => conversation.retry());
   form.addEventListener("submit", event => {
@@ -347,7 +367,16 @@ function mount(panel) {
       showConversation();
     }
     if (event.name === "turn_start") beginTurn(event.data.question);
-    if (event.name === "status") status.textContent = event.data.message;
+    if (event.name === "waiting") {
+      status.hidden = false;
+      const {attempt, maxAttempts, delay} = event.data;
+      status.textContent = `AI Summary is busy. Trying again in ${delay / 1000} seconds (${attempt} of ${maxAttempts}).`;
+      if (!activeTurn?.text) preview.textContent = status.textContent;
+    }
+    if (event.name === "status") {
+      status.hidden = false;
+      status.textContent = event.data.message;
+    }
     if (event.name === "sources") {
       activeTurn.sources = event.data.sources;
       const details = sourceList(activeTurn.sources);
@@ -372,6 +401,7 @@ function mount(panel) {
     if (event.name === "turn_error") {
       status.hidden = false;
       status.textContent = event.data.message;
+      if (!activeTurn.text) preview.textContent = status.textContent;
       activeTurn.turnStatus.textContent = activeTurn.text ? "Incomplete answer" : event.data.message;
       activeTurn.turnStatus.hidden = !activeTurn.text;
       failedTurn = activeTurn.turn;

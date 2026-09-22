@@ -86,3 +86,16 @@ unlabeled languages, grammar errors, and blocks over 50,000 characters fall back
 to plain text. The renderer rebuilds only text and span nodes from the escaped
 highlighting output and verifies that their text exactly matches the original.
 Highlighting never introduces executable HTML or changes clipboard contents.
+
+## Busy-state recovery
+
+Only an HTTP 429 stream response carrying the local `busy` error code, before
+any content/status event, is retried automatically. The browser keeps the same
+signed token and question and retries after 2, 4, and 8 seconds. Waiting remains
+an exclusive conversation operation; canceling, Stop, or leaving the page aborts
+its timer. After three retries, the UI offers manual Retry with a fresh budget.
+Provider limits, transport errors, and partial responses are never auto-replayed.
+
+`tests/integration/busy_check.py` uses a controlled browser clock to cover waiting,
+recovery, exhaustion, cancellation, keyboard focus, and preserved partial answers.
+It runs as part of `make integration`.

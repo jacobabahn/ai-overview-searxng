@@ -85,7 +85,7 @@ def register(
             return _error_response(error, 403 if error.code == "invalid_state" else 400)
         if not slots.acquire(blocking=False):
             return _error_response(
-                OverviewError("busy", "Another overview is running. Try again shortly."), 429
+                OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
             )
 
         def generate() -> Iterator[str]:

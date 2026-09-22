@@ -28,6 +28,8 @@
   margin-block: 0 0.5rem;
   padding-block: 0;
 }
+.ai-overview :is(.ai-content, .ai-collapsed-preview) { margin-inline: 0.5rem; }
+.ai-overview .ai-content { padding-block-start: 0.5rem; }
 .ai-overview [hidden] { display: none !important; }
 .ai-overview .ai-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -39,7 +41,7 @@
 .ai-overview .ai-overview-header h2 { font: inherit; font-size: 1rem; font-weight: 650; margin: 0; color: var(--ai-text); }
 .ai-overview svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .ai-overview .ai-collapse[aria-expanded="false"] svg { transform: rotate(180deg); }
-.ai-overview .ai-provenance { font-size: 0.85rem; color: var(--ai-muted); margin-block: 0 0.9rem; }
+.ai-overview .ai-provenance { font-size: 0.85rem; color: var(--ai-muted); margin-block: 0.25rem 0.65rem; }
 .ai-overview button {
   font: inherit; font-size: 0.875rem; color: var(--ai-link);
   background: transparent; border: 1px solid var(--ai-border);
@@ -86,9 +88,9 @@
 .ai-overview .ai-status:empty { display: none; }
 .ai-overview .ai-answer {
   white-space: normal; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65;
-  max-width: 72ch;
   margin-block: 0.25rem 0.5rem;
 }
+.ai-overview .ai-answer:empty { display: none; }
 .ai-overview .ai-answer a[data-source-id] {
   display: inline-block; vertical-align: baseline; font-size: 0.75em; font-weight: 600;
   color: var(--ai-link); background: var(--ai-tint); border-radius: 0.25rem;
@@ -110,6 +112,7 @@
 .ai-overview .ai-sources li p { line-height: 1.6; margin-block: 0.4rem; }
 .ai-overview .ai-sources li:focus { outline: 2px solid var(--ai-link); outline-offset: 4px; border-radius: 0.1rem; }
 .ai-overview .ai-actions { display: flex; gap: 0.5rem; }
+.ai-overview .ai-actions button { min-height: 44px; }
 .ai-overview .ai-actions:has(button:not([hidden])) { margin-block-start: 0.75rem; }
 .ai-overview .ai-follow-up {
   display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.75rem;

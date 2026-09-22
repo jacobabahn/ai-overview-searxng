@@ -1,3 +1,20 @@
+const BUSY_RETRY_DELAYS = [2000, 4000, 8000];
+
+function waitForRetry(delay, signal) {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, delay);
+    signal.addEventListener("abort", cancel, {once: true});
+  });
+}
+
 // Owns request ordering and signed continuation state; independent of the DOM.
 export async function* events(body) {
   const reader = body.getReader();
@@ -184,33 +201,59 @@ export class Conversation {
     this.#failed = false;
     this.#emit("turn_start", {question});
     try {
-      signal.throwIfAborted();
-      const response = await this.#fetch(this.#endpoints.stream, {
-        method: "POST", credentials: "same-origin", signal,
-        headers: {"Content-Type": "application/json", "Accept": "text/event-stream"},
-        body: JSON.stringify({token: this.#token, ...(question ? {question} : {})}),
-      });
-      if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
-        throw new Error("Could not start the overview. Try again.");
-      }
-      let complete = false;
-      for await (const event of events(response.body)) {
-        signal.throwIfAborted();
-        if (event.name === "error") throw new Error(event.data.message);
-        if (event.name === "done") {
-          if (typeof event.data.token !== "string" || !event.data.token) throw new Error("Invalid overview continuation.");
-          this.#token = event.data.token;
-          this.#canFollowUp = event.data.can_follow_up;
-          complete = true;
+      for (let attempt = 0; ; attempt++) {
+        let receivedContent = false;
+        try {
+          signal.throwIfAborted();
+          operation.phase = "streaming";
+          if (attempt) this.#emit("status", {message: "Trying again…"});
+          const response = await this.#fetch(this.#endpoints.stream, {
+            method: "POST", credentials: "same-origin", signal,
+            headers: {"Content-Type": "application/json", "Accept": "text/event-stream"},
+            body: JSON.stringify({token: this.#token, ...(question ? {question} : {})}),
+          });
+          if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
+            throw new Error("Could not start the overview. Try again.");
+          }
+          let complete = false;
+          for await (const event of events(response.body)) {
+            signal.throwIfAborted();
+            if (event.name === "error") {
+              throw Object.assign(new Error(event.data.message), {code: event.data.code, status: response.status});
+            }
+            if (event.name === "done") {
+              if (typeof event.data.token !== "string" || !event.data.token) throw new Error("Invalid overview continuation.");
+              this.#token = event.data.token;
+              this.#canFollowUp = event.data.can_follow_up;
+              complete = true;
+              break;
+            }
+            receivedContent = true;
+            this.#emit(event.name, event.data);
+          }
+          if (!complete) throw new Error("The connection ended before the answer was complete.");
           break;
+        } catch (error) {
+          signal.throwIfAborted();
+          // Only retry local admission failures, before the server began any work.
+          // Provider limits and interrupted/partial answers must never be replayed.
+          if (error.code !== "busy" || error.status !== 429 || receivedContent) throw error;
+          const delay = BUSY_RETRY_DELAYS[attempt];
+          if (delay === undefined) {
+            throw Object.assign(new Error("AI Summary is still busy. Try again in a moment."), {code: "busy"});
+          }
+          operation.phase = "waiting";
+          this.#emit("waiting", {attempt: attempt + 1, maxAttempts: BUSY_RETRY_DELAYS.length, delay});
+          await waitForRetry(delay, signal);
         }
-        this.#emit(event.name, event.data);
       }
-      if (!complete) throw new Error("The connection ended before the answer was complete.");
       this.#emit("turn_done");
     } catch (error) {
       this.#failed = true;
-      this.#emit("turn_error", {message: error.name === "AbortError" ? "Stopped. This answer is incomplete." : error.message});
+      const stopped = operation.phase === "waiting"
+        ? "Waiting canceled. You can retry when you’re ready."
+        : "Stopped. This answer is incomplete.";
+      this.#emit("turn_error", {code: error.code, message: error.name === "AbortError" ? stopped : error.message});
     }
   }
 }
