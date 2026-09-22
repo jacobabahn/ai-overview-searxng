@@ -35,7 +35,7 @@
     </div>
     {% endif %}
     <div class="ai-settings-footer">
-      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary and clears follow-ups.</p>
+      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary.</p>
       <button type="button" class="ai-regenerate" aria-describedby="ai-restart-help">Regenerate overview</button>
       {% if model_picker %}
       <button type="button" class="ai-apply-model" aria-describedby="ai-restart-help" disabled hidden>Use model and restart</button>
@@ -47,8 +47,8 @@
   <div class="ai-content">
     <p class="ai-provenance">Based on search snippets</p>
     <p class="ai-status" role="status" aria-live="polite">Reading search results…</p>
-    <div class="ai-turns"></div>
-    <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false"><span>More</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+    <div class="ai-turns" id="ai-summary-turns"></div>
+    <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false" aria-controls="ai-summary-turns"><span>Show full answer</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
     <span class="ai-copy-status ai-sr-only" role="status"></span>
     <div class="ai-actions">
       <button type="button" class="ai-retry" hidden>Retry</button>

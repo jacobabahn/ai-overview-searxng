@@ -136,20 +136,19 @@
   .ai-overview .ai-options:not([hidden]) { animation: none; }
 }
 .ai-overview .ai-sparkle { display: inline-block; margin-inline-end: 0.5rem; color: var(--ai-muted); font-size: 1.2em; }
+.ai-overview .ai-turns { display: flow-root; overflow-anchor: none; }
 .ai-overview .ai-more-row { display: flex; align-items: center; gap: 0.85rem; margin-block: 0.75rem 0; }
 .ai-overview .ai-more-row::before,
 .ai-overview .ai-more-row::after { content: ''; height: 1px; background: var(--ai-border); flex: 1; }
 .ai-overview .ai-more {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  min-height: 36px; min-width: 7.5rem; padding: 0.35rem 1rem;
+  min-height: 44px; min-width: 7.5rem; padding: 0.35rem 1rem;
   border-radius: 2rem; color: var(--ai-text); font-weight: 600;
 }
 .ai-overview .ai-more svg { width: 1rem; height: 1rem; }
 .ai-overview .ai-more[aria-expanded="true"] svg { transform: rotate(180deg); }
 .ai-overview[data-expanded="false"] .ai-turns > article:not(:first-child) { display: none; }
 .ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) {
-  /* Keep paragraph breaks from consuming the final line of the compact preview. */
-  white-space: normal;
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
 @media (max-width: 450px) {

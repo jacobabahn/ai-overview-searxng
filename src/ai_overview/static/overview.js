@@ -87,18 +87,49 @@ function mount(panel) {
   const copy = panel.querySelector(".ai-copy");
   const copyStatus = panel.querySelector(".ai-copy-status");
   let expanded = false;
-  function expand(value) {
+  let disclosureAnimation;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  function cancelDisclosureAnimation() {
+    disclosureAnimation?.cancel();
+    disclosureAnimation = null;
+  }
+  function expand(value, animate = false) {
+    const before = turns.getBoundingClientRect().height;
+    cancelDisclosureAnimation();
     expanded = value;
     if (!value) turns.querySelectorAll(".ai-answer-revealed").forEach(answer => answer.classList.remove("ai-answer-revealed"));
     panel.dataset.expanded = String(value);
-    more.setAttribute("aria-expanded", String(value));
-    more.querySelector("span").textContent = value ? "Less" : "More";
-    form.hidden = !conversation.state.canFollowUp || !expanded;
+    updateDisclosure();
+    const after = turns.getBoundingClientRect().height;
+    if (animate && !reducedMotion.matches && Math.abs(after - before) > 1) {
+      disclosureAnimation = turns.animate([
+        {height: `${before}px`, overflow: "clip"},
+        {height: `${after}px`, overflow: "clip"},
+      ], {duration: 260, easing: "cubic-bezier(0.2, 0, 0, 1)"});
+      disclosureAnimation.onfinish = () => {
+        disclosureAnimation = null;
+        if (!value && more.getBoundingClientRect().top < 0) more.scrollIntoView({block: "nearest"});
+      };
+    } else if (animate && !value && more.getBoundingClientRect().top < 0) {
+      more.scrollIntoView({block: "nearest"});
+    }
   }
   function updateDisclosure() {
-    moreRow.hidden = !turns.querySelector(".ai-answer")?.textContent && !conversation.state.canFollowUp;
+    const answer = turns.querySelector(".ai-answer");
+    const clipped = answer && answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1;
+    const hasConversation = turns.childElementCount > 1;
+    moreRow.hidden = !clipped && !hasConversation;
+    more.setAttribute("aria-expanded", String(expanded));
+    more.querySelector("span").textContent = expanded ? "Show less" : hasConversation ? "Show conversation" : "Show full answer";
+    // Follow-up entry is temporarily hidden; keep the conversation support intact.
+    form.hidden = true;
   }
-  more.addEventListener("click", () => expand(!expanded));
+  new ResizeObserver(() => {
+    cancelDisclosureAnimation();
+    updateDisclosure();
+  }).observe(panel.querySelector(".ai-overview-header"));
+  reducedMotion.addEventListener("change", cancelDisclosureAnimation);
+  more.addEventListener("click", () => expand(!expanded, true));
   copy.addEventListener("click", async () => {
     const text = [...turns.querySelectorAll("article")].map(turn => {
       const answer = turn.querySelector(".ai-answer").cloneNode(true);
@@ -183,7 +214,7 @@ function mount(panel) {
     panel.querySelector(".ai-settings-busy").hidden = !state.busy;
     panel.querySelector(".ai-settings-busy").textContent = state.phase === "selecting"
       ? "Restarting overview…" : "Wait for the answer to finish, or stop generating to restart.";
-    form.hidden = !state.canFollowUp || !expanded;
+    updateDisclosure();
     if (picker) {
       picker.disabled = state.busy || state.loadingModels || !state.choices.length;
       reloadModels.disabled = state.busy || state.loadingModels;
@@ -242,6 +273,7 @@ function mount(panel) {
   });
 
   function beginTurn(question) {
+    cancelDisclosureAnimation();
     failedTurn?.remove();
     failedTurn = null;
     if (!question && !turns.childElementCount) {
@@ -262,7 +294,10 @@ function mount(panel) {
     }
     const answer = document.createElement("div");
     answer.className = "ai-answer";
-    answer.addEventListener("focusin", () => answer.classList.add("ai-answer-revealed"));
+    answer.addEventListener("focusin", () => {
+      cancelDisclosureAnimation();
+      answer.classList.add("ai-answer-revealed");
+    });
     const turnStatus = document.createElement("p");
     turnStatus.className = "ai-turn-status";
     turnStatus.hidden = true;
@@ -319,6 +354,7 @@ function mount(panel) {
       if (details.querySelector("li")) activeTurn.turn.append(details);
     }
     if (event.name === "text_delta") {
+      cancelDisclosureAnimation();
       status.hidden = true;
       copy.disabled = false;
       activeTurn.text += event.data.text;

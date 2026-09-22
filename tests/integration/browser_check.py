@@ -42,16 +42,11 @@ def main() -> None:
         expect(page.locator(".ai-prototype-switcher")).to_have_count(0)
         expect(panel.locator("h2")).to_have_text("✦AI Summary")
         expect(panel.locator(".ai-provenance")).to_have_text("Based on search snippets")
-        expect(panel.locator(".ai-more")).to_be_visible()
+        expect(panel.locator(".ai-more")).to_be_hidden()
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
-        panel.get_by_role("button", name="More", exact=True).click()
-        expect(panel.locator(".ai-follow-up")).to_be_visible()
-        panel.get_by_role("button", name="Less", exact=True).click()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
-        panel.get_by_role("button", name="More", exact=True).click()
-        panel.get_by_label("Ask a follow-up").focus()
+        panel.get_by_role("button", name="Copy answer").focus()
         page.keyboard.press("Escape")
-        expect(panel.get_by_label("Ask a follow-up")).to_be_focused()
+        expect(panel.get_by_role("button", name="Copy answer")).to_be_focused()
         page.context.grant_permissions(["clipboard-read", "clipboard-write"])
         panel.get_by_role("button", name="Copy answer").click()
         expect(panel.locator(".ai-copy-status")).to_have_text("Answer copied.")
@@ -63,12 +58,20 @@ def main() -> None:
         expect(panel.locator(".ai-sources li p").first).not_to_be_empty()
         panel.locator(".ai-sources summary").first.click()
         first_href = panel.locator(".ai-answer a").first.get_attribute("href")
-        panel.get_by_label("Ask a follow-up").fill("Why is sunset different?")
-        panel.get_by_role("button", name="Ask", exact=True).click()
+        # Exercise retained conversation support without exposing the hidden input.
+        panel.locator(".ai-follow-up").evaluate("""form => {
+          form.querySelector('input').value = 'Why is sunset different?';
+          form.requestSubmit();
+        }""")
         expect(panel.locator(".ai-answer")).to_have_count(2)
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.get_by_label("Ask a follow-up")).to_be_focused()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
         assert panel.locator(".ai-answer a").first.get_attribute("href") == first_href
+        panel.get_by_role("button", name="Show less", exact=True).click()
+        expect(panel.locator(".ai-turns > article").nth(1)).to_be_hidden()
+        panel.get_by_role("button", name="Show conversation", exact=True).click()
+        expect(panel.locator(".ai-turns > article").nth(1)).to_be_visible()
+        expect(panel.locator(".ai-answer")).to_have_count(2)
         picker = panel.get_by_label("Overview model")
         expect(picker).to_be_hidden()
         panel.get_by_role("button", name="Summary settings", exact=True).click()
@@ -132,8 +135,8 @@ def main() -> None:
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
-        panel.get_by_role("button", name="More", exact=True).click()
-        expect(panel.locator(".ai-follow-up")).to_be_visible()
+        panel.get_by_role("button", name="Show full answer", exact=True).click()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
 
         # A failed model selection keeps the existing answer and reports the error.
         page.route(
@@ -226,10 +229,13 @@ def main() -> None:
         expect(panel.locator(".ai-status")).to_have_text("")
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-answer")).to_have_text("Selected model answer")
-        panel.get_by_role("button", name="More", exact=True).click()
-        panel.get_by_label("Ask a follow-up").fill("Why?")
+        expect(panel.locator(".ai-more")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
         with page.expect_request(lambda request: request.url.endswith("/stream")):
-            panel.get_by_role("button", name="Ask", exact=True).click()
+            panel.locator(".ai-follow-up").evaluate("""form => {
+              form.querySelector('input').value = 'Why?';
+              form.requestSubmit();
+            }""")
         assert len(pending_generation) == 1
         followup = pending_generation.pop()
         assert followup.request.post_data_json == {
@@ -274,13 +280,39 @@ def main() -> None:
         )
         page.goto("http://127.0.0.1:8899/search?q=long-answer%3F")
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.get_by_role("button", name="More", exact=True)).to_be_visible()
+        expect(panel.get_by_role("button", name="Show full answer", exact=True)).to_be_visible()
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
         answer = panel.locator(".ai-answer")
         assert answer.evaluate("el => el.scrollHeight > el.clientHeight")
-        panel.get_by_role("button", name="More", exact=True).click()
+        # Measure a paused midpoint: expansion must interpolate without moving the top.
+        page.emulate_media(reduced_motion="no-preference")
+        dimensions = panel.evaluate("""panel => {
+          const turns = panel.querySelector('.ai-turns');
+          const before = turns.getBoundingClientRect();
+          panel.querySelector('.ai-more').click();
+          const animation = turns.getAnimations()[0];
+          animation.pause();
+          animation.currentTime = 130;
+          const middle = turns.getBoundingClientRect();
+          return {before: before.height, middle: middle.height,
+            full: turns.scrollHeight, topBefore: before.top, topAfter: middle.top};
+        }""")
+        assert dimensions["before"] < dimensions["middle"] < dimensions["full"]
+        assert abs(dimensions["topBefore"] - dimensions["topAfter"]) < 1
+        page.screenshot(path=str(output / "overview-expanding.png"), full_page=True)
+        panel.locator(".ai-turns").evaluate("el => el.getAnimations()[0].finish()")
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
         assert answer.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
-        panel.get_by_role("button", name="Less", exact=True).click()
+        # Rapid reversal leaves one animation and settles at the intended size.
+        panel.evaluate("""panel => {
+          const button = panel.querySelector('.ai-more');
+          button.click(); button.click(); button.click();
+        }""")
+        expect(panel).to_have_attribute("data-expanded", "false")
+        panel.locator(".ai-turns").evaluate(
+            "async el => { await Promise.all(el.getAnimations().map(a => a.finished)); }"
+        )
+        assert answer.evaluate("el => el.scrollHeight > el.clientHeight")
         answer.locator("a").focus()
         expect(panel).to_have_attribute("data-expanded", "false")
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
@@ -288,6 +320,10 @@ def main() -> None:
         page.set_viewport_size({"width": 320, "height": 740})
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.emulate_media(reduced_motion="reduce")
+        panel.get_by_role("button", name="Show full answer", exact=True).click()
+        assert panel.locator(".ai-turns").evaluate("el => el.getAnimations().length") == 0
+        panel.get_by_role("button", name="Show less", exact=True).click()
+        expect(panel.locator(".ai-follow-up")).to_be_hidden()
         panel.get_by_role("button", name="Summary settings").click()
         assert (
             panel.locator(".ai-options").evaluate("el => getComputedStyle(el).animationName")
