@@ -6,8 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "searxng-ai-overview"
 version = "0.1.0"
 description = "Streaming, source-linked AI overviews for SearXNG"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["Flask>=3.1", "itsdangerous>=2.1", "PyYAML>=6"]
+
+[project.urls]
+Repository = "https://github.com/jacobabahn/ai-overview-searxng"
+Issues = "https://github.com/jacobabahn/ai-overview-searxng/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

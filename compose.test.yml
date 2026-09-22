@@ -1,7 +1,7 @@
 name: ai-overview-test
 services:
   searxng:
-    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    image: ${SEARXNG_IMAGE:-searxng/searxng:2026.9.19-e831fc2a1}
     ports:
       - "127.0.0.1:8899:8080"
     environment:
@@ -14,7 +14,7 @@ services:
     depends_on:
       - provider
   provider:
-    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    image: ${SEARXNG_IMAGE:-searxng/searxng:2026.9.19-e831fc2a1}
     entrypoint: ["/usr/sbin/python", "/fixture/provider.py"]
     volumes:
       - ./tests/integration/provider.py:/fixture/provider.py:ro

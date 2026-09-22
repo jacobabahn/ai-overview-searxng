@@ -4,8 +4,8 @@
 
 Build an installable Python package loaded by SearXNG, with separate JavaScript
 and CSS assets. Target the Simple theme and Docker Compose. Start with snippets.
-The existing instance runs SearXNG revision `e831fc2a1` and already mounts the
-reference AI Answers plugin. Develop and test separately before replacing it.
+The initial integration was developed against SearXNG revision `e831fc2a1`.
+Use a separate test instance when validating compatibility with other revisions.
 
 ```mermaid
 sequenceDiagram

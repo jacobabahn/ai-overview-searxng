@@ -1,6 +1,7 @@
 # SearXNG AI Overviews — working specification
 
-Status: discussion draft. Proposed defaults below are not settled requirements.
+Historical design draft. This records the initial discussion, not the current
+configuration reference. See the [README](../README.md) for supported behavior.
 
 ## Intent
 
@@ -29,7 +30,8 @@ set or single-file distribution is not a requirement.
 | Default model | Default provider/model and representative models per backend | Determines initial configuration and compatibility testing |
 
 The initial implementation uses an in-process plugin and selective follow-up
-retrieval. See ARCHITECTURE.md for implementation decisions and README.md for
+retrieval. See [Architecture](ARCHITECTURE.md) for implementation decisions and the
+[README](../README.md) for
 verification status and installation.
 
 OpenCode Go is one of the requested integrations. Its official documentation

@@ -1,11 +1,24 @@
+# Python environments, caches, and build output
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
 dist/
 build/
+.coverage
+htmlcov/
+
+# Private deployment configuration
 .env
+.env.*
+!.env.example
 .local/
 /overview.yml
+/settings.yml
+
+# Generated browser output and editor/OS files
 artifacts/
+.DS_Store
+*.swp

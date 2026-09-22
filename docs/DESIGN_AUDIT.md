@@ -1,5 +1,8 @@
 # Search overview design audit
 
+Historical design notes from the initial interface review. Test counts below
+record that review and are not the current test inventory.
+
 The overview belongs in SearXNG's result column. Its primary job is to help a
 reader understand an answer, inspect its evidence, and ask a follow-up while
 keeping ordinary results easy to reach.

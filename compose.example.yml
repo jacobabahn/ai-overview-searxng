@@ -2,7 +2,7 @@
 # into its service instead of replacing its Compose file.
 services:
   searxng:
-    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    image: ${SEARXNG_IMAGE:-searxng/searxng:2026.9.19-e831fc2a1}
     ports:
       - "127.0.0.1:8888:8080"
     extra_hosts:
