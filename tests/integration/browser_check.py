@@ -135,8 +135,7 @@ def main() -> None:
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
-        panel.get_by_role("button", name="Show full answer", exact=True).click()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-more")).to_be_hidden()
 
         # A failed model selection keeps the existing answer and reports the error.
         page.route(
@@ -331,6 +330,69 @@ def main() -> None:
         )
         page.keyboard.press("Escape")
         expect(panel.get_by_role("button", name="Summary settings")).to_be_focused()
+        # A paragraph break on line four must not strand the ellipsis on an empty line.
+        paragraph_answer = "First line.\nSecond line.\nThird line.\n\n" + long_answer
+        page.unroute("**/ai-overview/stream")
+        paragraph_stream = (
+            "event: text_delta\ndata: "
+            + json.dumps({"text": paragraph_answer})
+            + '\n\nevent: done\ndata: {"token":"fixture","can_follow_up":true}\n\n'
+        )
+        page.route(
+            "**/ai-overview/stream",
+            lambda route: route.fulfill(content_type="text/event-stream", body=paragraph_stream),
+        )
+        page.goto("http://127.0.0.1:8899/search?q=paragraph+wrapping%3F")
+        expect(panel.locator(".ai-status")).to_have_text("")
+        answer = panel.locator(".ai-answer")
+        for width in [320, 390, 1280]:
+            page.set_viewport_size({"width": width, "height": 900})
+            # Check actual glyph positions, not just the white-space CSS declaration.
+            last_line_has_text = answer.evaluate(r"""answer => {
+              const box = answer.getBoundingClientRect();
+              const lineHeight = parseFloat(getComputedStyle(answer).lineHeight);
+              const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT);
+              let node;
+              while ((node = walker.nextNode())) {
+                for (let i = 0; i < node.length; i++) {
+                  if (/\s/.test(node.textContent[i])) continue;
+                  const range = document.createRange();
+                  range.setStart(node, i); range.setEnd(node, i + 1);
+                  const rect = range.getBoundingClientRect();
+                  if (rect.height && rect.bottom <= box.bottom + 1 &&
+                      rect.bottom > box.bottom - lineHeight) return true;
+                }
+              }
+              return false;
+            }""")
+            assert last_line_has_text
+        panel.get_by_role("button", name="Show full answer", exact=True).click()
+        expect(answer).to_have_text(paragraph_answer)
+        assert answer.evaluate("el => getComputedStyle(el).whiteSpace") == "pre-wrap"
+        panel.get_by_role("button", name="Show less", exact=True).click()
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.screenshot(path=str(output / "overview-ellipsis-fixed.png"), full_page=True)
+
+        # Instant answers and AI Summary must not share one continuous card.
+        page.goto("http://127.0.0.1:8899/search?q=stacked+answers%3F")
+        cards = page.locator("#answers > .answer")
+        expect(cards).to_have_count(2)
+        for width, scheme in [(390, "dark"), (1280, "light")]:
+            page.set_viewport_size({"width": width, "height": 900})
+            page.emulate_media(color_scheme="dark" if scheme == "dark" else "light")
+            geometry = page.locator("#answers").evaluate("""group => {
+              const cards = [...group.querySelectorAll(':scope > .answer')];
+              const first = cards[0].getBoundingClientRect();
+              const second = cards[1].getBoundingClientRect();
+              return {gap: second.top - first.bottom,
+                background: getComputedStyle(group).backgroundColor,
+                radii: cards.map(c => getComputedStyle(c).borderRadius)};
+            }""")
+            assert geometry["gap"] >= 12
+            assert geometry["background"] == "rgba(0, 0, 0, 0)"
+            assert geometry["radii"] == ["10px", "10px"]
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.screenshot(path=str(output / f"overview-stacked-{scheme}.png"), full_page=True)
         assert not errors, errors
         browser.close()
     print(

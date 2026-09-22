@@ -10,7 +10,7 @@ disabled = False
 def search(query: str, params: dict[str, Any]) -> list[dict[str, str]]:
     if "empty" in query:
         return []
-    return [
+    results = [
         {
             "url": "https://example.org/sky",
             "title": "Why the sky is blue",
@@ -22,3 +22,11 @@ def search(query: str, params: dict[str, Any]) -> list[dict[str, str]]:
             "content": "Sunlight travels through more atmosphere at sunset, scattering away more blue light.",
         },
     ]
+    if "stacked" in query:
+        results.append(
+            {
+                "answer": "Seattle University is a private Jesuit university in Seattle, Washington.",
+                "url": "https://en.wikipedia.org/wiki/Seattle_University",
+            }
+        )
+    return results

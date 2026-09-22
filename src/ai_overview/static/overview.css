@@ -1,3 +1,17 @@
+/* SearXNG groups instant answers in one surface. Separate them when our panel
+   shares that group, using the host theme's card color, radius, and spacing. */
+#answers:has(.ai-overview):has(> .answer ~ .answer) {
+  background: transparent;
+  padding: 0;
+}
+#answers:has(.ai-overview):has(> .answer ~ .answer) > .answer {
+  background: var(--color-answer-background, var(--color-base-background, #ffffff));
+  border-radius: 10px;
+  padding: 1rem;
+  min-width: 0;
+}
+#answers:has(.ai-overview) > .answer + .answer { margin-block-start: 1rem; }
+
 .ai-overview {
   --ai-text: var(--color-base-font, #222222);
   --ai-muted: var(--color-result-engines-font, #62666d);
@@ -149,6 +163,8 @@
 .ai-overview .ai-more[aria-expanded="true"] svg { transform: rotate(180deg); }
 .ai-overview[data-expanded="false"] .ai-turns > article:not(:first-child) { display: none; }
 .ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) {
+  /* Paragraph breaks must not consume the final preview line on their own. */
+  white-space: normal;
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
 @media (max-width: 450px) {
