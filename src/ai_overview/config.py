@@ -1,12 +1,15 @@
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Optional, Self
 from urllib.parse import urlsplit
 
 import yaml
 
 from .routing import DEFAULTS, EXTRA_OPTIONS, SUFFIXES, go_endpoint
+
+DEFAULT_CONFIG_PATH = Path("/etc/searxng/overview.yml")
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,9 +44,46 @@ class Config:
     model_picker: bool = False
 
     @classmethod
-    def load(cls, path: str | Path) -> Self:
+    def load(cls, path: Optional[str | Path] = None) -> Self:
+        if path is None:
+            path = os.getenv("AI_OVERVIEW_CONFIG")
+            if path is None and "AI_OVERVIEW_BACKEND" in os.environ:
+                return cls.from_environment()
+            if path is None:
+                path = DEFAULT_CONFIG_PATH
         with open(path, encoding="utf-8") as f:
-            return cls.from_dict(yaml.safe_load(f))
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError:
+                raise ValueError("Invalid overview YAML") from None
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_environment(cls) -> Self:
+        """Build one profile through the same validation used for YAML."""
+        profile: dict[str, Any] = {
+            "backend": os.getenv("AI_OVERVIEW_BACKEND", ""),
+            "model": os.getenv("AI_OVERVIEW_MODEL", ""),
+        }
+        for field_name in ("endpoint", "protocol"):
+            name = "AI_OVERVIEW_" + field_name.upper()
+            if name in os.environ:
+                profile[field_name] = os.environ[name]
+        if "AI_OVERVIEW_API_KEY" in os.environ:
+            profile["api_key_env"] = "AI_OVERVIEW_API_KEY"
+        for field_name in ("max_output_tokens", "timeout_seconds", "read_timeout_seconds"):
+            name = "AI_OVERVIEW_" + field_name.upper()
+            if name in os.environ:
+                try:
+                    profile[field_name] = int(os.environ[name])
+                except ValueError:
+                    raise ValueError(f"{name} must be a positive integer") from None
+        if "AI_OVERVIEW_OPTIONS" in os.environ:
+            try:
+                profile["options"] = json.loads(os.environ["AI_OVERVIEW_OPTIONS"])
+            except ValueError:
+                raise ValueError("AI_OVERVIEW_OPTIONS must be a JSON object") from None
+        return cls.from_dict({"default_profile": "default", "profiles": {"default": profile}})
 
     @classmethod
     def from_dict(cls, data: Any) -> Self:

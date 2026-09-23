@@ -39,7 +39,6 @@ def main() -> None:
         page.unroute("**/ai-overview/models")
         expect(panel.get_by_label("Overview model")).to_be_enabled()
         expect(panel.locator(".ai-answer a")).to_have_count(2)
-        expect(page.locator(".ai-prototype-switcher")).to_have_count(0)
         expect(panel.locator("h2")).to_have_text("✦AI Summary")
         expect(panel.locator(".ai-provenance")).to_have_text("Based on search snippets")
         expect(panel.locator(".ai-provenance")).to_be_hidden()

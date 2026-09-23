@@ -1,8 +1,39 @@
 # Provider configuration
 
-Run commands from the repository root. Start with
-[examples/overview.yml](../examples/overview.yml); model IDs must be available
-to your provider account or installed on your local server.
+Run commands from the repository root. Use environment variables for one model
+or [examples/overview.yml](../examples/overview.yml) for named profiles. Model IDs
+must be available to your provider account or installed on your local server.
+
+## Environment-only configuration
+
+For one model, set environment variables in the SearXNG process or Compose
+service instead of mounting `overview.yml`:
+
+| Variable | Purpose |
+| --- | --- |
+| `AI_OVERVIEW_BACKEND` | Required: `ollama`, `local`, `openai`, `gemini`, `openrouter`, or `opencode_go`. Selects environment mode. |
+| `AI_OVERVIEW_MODEL` | Required: exact model ID. |
+| `AI_OVERVIEW_ENDPOINT` | Optional endpoint override; defaults are the same as YAML profiles. |
+| `AI_OVERVIEW_API_KEY` | Optional key; overrides the backend's standard key variable when set, even if empty. |
+| `AI_OVERVIEW_PROTOCOL` | Optional protocol override, such as `anthropic` for a compatible Go model. |
+| `AI_OVERVIEW_MAX_OUTPUT_TOKENS` | Positive integer; default 1,200. |
+| `AI_OVERVIEW_TIMEOUT_SECONDS` | Positive integer; default 90. |
+| `AI_OVERVIEW_READ_TIMEOUT_SECONDS` | Positive integer; default 15. |
+| `AI_OVERVIEW_OPTIONS` | JSON object of validated provider options, e.g. `'{"think":false,"num_ctx":8192}'` for Ollama. |
+
+Hosted backends also read their usual key variables: `OPENAI_API_KEY`,
+`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. An authenticated
+local server can use `AI_OVERVIEW_API_KEY`.
+
+An explicit `AI_OVERVIEW_CONFIG` path takes priority over environment mode.
+Otherwise setting `AI_OVERVIEW_BACKEND` selects environment mode, even if the
+default YAML file exists. Without either, `/etc/searxng/overview.yml` is loaded.
+The two sources are never merged; a missing explicit file or invalid environment
+setting fails configuration. Restart SearXNG after changing settings.
+
+Environment mode creates one profile named `default` with the model picker off.
+Use YAML for multiple profiles, discovery, custom headers, or advanced limits.
+The `LLM_*` variable names from AI Answers are not aliases for these settings.
 
 ## Backends and budgets
 
@@ -46,7 +77,8 @@ There is no automatic provider fallback.
 
 ## Local Ollama
 
-For a small local model, pull `qwen3.5:4b` in Ollama and configure:
+For an Ollama model you have already installed, configure the profile below.
+Replace `your-installed-model` with its exact name from `ollama list`:
 
 ```yaml
 default_profile: ollama
@@ -54,7 +86,7 @@ model_picker: true
 profiles:
   ollama:
     backend: ollama
-    model: qwen3.5:4b
+    model: your-installed-model
     endpoint: http://ollama:11434/api/chat
     max_output_tokens: 1200
     planning_max_output_tokens: 512
@@ -75,6 +107,9 @@ reasoning. The longer timeouts allow for loading and processing snippets on
 modest hardware; actual speed depends on the model and available acceleration.
 Keep any existing provider profiles alongside this one to retain them in the picker.
 
+Follow-up planning options apply to the retained conversation API; the current
+summary interface does not expose a follow-up input.
+
 ## OpenCode Go live instance
 
 For a separate instance with real searches, the model picker, and your Go key:
@@ -86,8 +121,8 @@ docker compose -f compose.live.yml up -d --force-recreate
 
 The first command prompts for your key without echoing it. It stores private
 configuration in `.local/` (ignored by Git, directory mode 700, files mode 600).
-Open <http://127.0.0.1:8898>, search with a trailing `?`, and use **Model** in the
-overview panel. The integration fixture on port 8899 remains separate. To reuse an
+Open <http://127.0.0.1:8898>, search with a trailing `?`, and open **Summary settings**
+to choose a model. The integration fixture on port 8899 remains separate. To reuse an
 existing container's Go key and search configuration instead of entering a key:
 
 ```sh
@@ -121,6 +156,6 @@ selected profile/model in local storage. Switching models starts a fresh overvie
 from the original results and clears its follow-up conversation. Existing
 conversations retain their signed model selection.
 
-Go requests identify this extension honestlyand include a stable conversation
+Go requests identify this extension honestly and include a stable conversation
 session header. Its documentation describes coding-agent traffic as the intended
 workload; general search synthesis is not established as supported usage.

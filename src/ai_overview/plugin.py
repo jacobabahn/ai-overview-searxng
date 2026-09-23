@@ -32,7 +32,7 @@ class SXNGPlugin(Plugin):
 
     def init(self, app: Flask) -> bool:
         try:
-            config = Config.load(os.getenv("AI_OVERVIEW_CONFIG", "/etc/searxng/overview.yml"))
+            config = Config.load()
             secret = os.getenv("AI_OVERVIEW_SECRET") or settings["server"]["secret_key"]
             signer = StateSigner(secret, config.token_ttl_seconds)
             self.service = GenerationService(config, signer, SearXNGTransport(), self.retrieve)

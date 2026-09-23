@@ -54,11 +54,9 @@ reporting a problem, include the SearXNG image version, backend, model ID, and
 reproduction steps. Remove credentials, signed conversation state, and private
 search content from logs and screenshots.
 
-## Design references
-
-- [Architecture](ARCHITECTURE.md): implementation boundaries and tradeoffs.
-- [Initial specification](SPEC.md): historical planning notes.
-- [Design audit](DESIGN_AUDIT.md): historical interface review.
+See [Architecture](ARCHITECTURE.md) for implementation boundaries and the
+streaming and state contracts. Follow-up integration checks exercise the retained
+conversation API programmatically; the shipped interface hides the input.
 
 ## Markdown rendering
 

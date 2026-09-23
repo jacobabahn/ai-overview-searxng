@@ -1,11 +1,12 @@
 # Architecture
 
-## Decision
+The plugin is a Python package loaded by SearXNG, with packaged JavaScript, CSS,
+and templates. It targets the Simple theme and builds answers from search snippets.
+Integration tests use SearXNG `2026.9.19-e831fc2a1`.
 
-Build an installable Python package loaded by SearXNG, with separate JavaScript
-and CSS assets. Target the Simple theme and Docker Compose. Start with snippets.
-The initial integration was developed against SearXNG revision `e831fc2a1`.
-Use a separate test instance when validating compatibility with other revisions.
+The browser currently exposes single-question summaries. Follow-up handling
+remains implemented in the service and conversation controller, but its input
+is hidden in the shipped interface. The diagram includes that internal flow.
 
 ```mermaid
 sequenceDiagram
@@ -40,8 +41,9 @@ sequenceDiagram
 - `service.py`: prompt construction, follow-up planning, evidence selection,
   normalized events, and successful conversation updates.
 - `providers/`: request translation and incremental response parsing for Chat
-  Completions, Responses, Gemini, and Ollama's native chat protocol.
-- `config.py`: configuration loading, named profiles, server-side credentials, and limits.
+  Completions, Responses, Anthropic Messages, Gemini, and Ollama's native chat protocol.
+- `config.py`: YAML or environment configuration, shared profile validation,
+  server-side credentials, and limits.
 - `routing.py`: provider defaults, model/protocol routes, endpoint selection, and
   compatible options, shared by initial configuration and signed selections.
 - `catalog.py`: cached Go model discovery, documented protocol routes, and
@@ -53,14 +55,9 @@ sequenceDiagram
   from conversation state. Catalog loading can proceed alongside initial generation.
 - `static/`: packaged browser modules and scoped theme-aware styles; no build step.
 
-Use typed dataclasses for profiles, sources, search options, conversations,
-turns, messages, and events. Use uv for dependencies, Ruff for formatting,
-imports, linting, and required annotations, and ty for static type checks.
-Ordinary optional values use `typing.Optional[T]`. Ruff's `UP045` rule is disabled
-to preserve this convention. Stream failures currently use typed
-exceptions; an Option/Result library has been discussed but not adopted.
-Use small explicit interfaces. No agent
-framework, vector database, or frontend build pipeline is needed for this scope.
+Profiles, sources, search options, conversations, turns, messages, and events use
+typed dataclasses. Stream failures use typed exceptions. Browser modules are
+packaged directly; there is no frontend build step.
 
 ## State and authorization
 
@@ -156,27 +153,16 @@ See [Markdown rendering](development.md#markdown-rendering) for dependency and
 rendering details. Display partial answers on failure with an explicit status.
 Screen readers receive status updates rather than announcements for every token.
 
-Visual direction: inherit SearXNG typography and CSS colors; fallbacks are white
-`#ffffff`, text `#222222`, muted text `#555555`, link blue `#3050ff`, and border
-`#d8d8d8`. Use a left-aligned reading column and a compact source list. Citations
-are the visual emphasis. Avoid decorative cards, animation, and external fonts.
+## Summary interface
 
-```text
-AI overview                                  Collapse
-Short answer with citations [1] [2]
+The panel inherits SearXNG's typography and theme colors. The initial answer
+previews four lines; the disclosure control expands longer answers. Each answer
+has its own source list, and citations open the corresponding source snippet.
+The header provides Stop, Copy, settings, and collapse controls. Settings allow
+regeneration and, when enabled, model selection. Motion respects reduced-motion
+preferences. The follow-up form remains hidden, including after expansion.
 
-Sources (expand for titles and links)
-----------------------------------------------------
-Ask a follow-up…                                Ask
-```
-
-## Build and verification
-
-1. Implement configuration, evidence, signed state, and protocol adapters.
-2. Connect the complete overview/follow-up flow to a standalone fixture demo.
-3. Add the SearXNG plugin and test against the installed image in isolation.
-4. Provide Compose settings, provider examples, and instructions to replace the
-   reference plugin once the new integration is ready.
+## Verification
 
 `make check` includes dependency-free Node tests of the conversation interface,
 using controlled fetch responses for selection/retry overlap, cancellation, saved
@@ -198,16 +184,3 @@ quality.
 - [Ollama chat API](https://docs.ollama.com/api/chat)
 - [OpenRouter chat API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion)
 - [OpenCode Go](https://opencode.ai/docs/go/)
-
-
-## Selected summary UI
-
-The user selected prototype D: a transparent, full-column AI Summary with a sparkle
-icon, compact toolbar, per-answer source pills, and centered More/Less control.
-The initial answer previews four lines; More reveals the full conversation and
-follow-up form. Citations and pills expand the relevant turn's source snippets.
-Motion respects reduced-motion preferences. The generated-from-snippets footer was
-removed at the user's request.
-
-The full layout study is preserved on Git branch `prototype/overview-layouts`
-(commit `24ab31f`). The runtime has no prototype assets, flags, or variant switcher.
