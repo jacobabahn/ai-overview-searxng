@@ -7,7 +7,7 @@ from ..config import Profile
 from ..errors import OverviewError
 from ..models import Message
 from .parsing import json_object, lines, sse
-from .transport import Transport, bounded
+from .transport import USER_AGENT, Transport, bounded
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +32,7 @@ class Provider:
             raise OverviewError("configuration", "The selected provider needs an API key.")
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "User-Agent": "searxng-ai-overview/0.1.0",
+            "User-Agent": USER_AGENT,
         }
         headers.update(p.headers)
         if p.api_key:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "searxng-ai-overview"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Streaming, source-linked AI overviews for SearXNG"
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,9 @@ dependencies = ["Flask>=3.1", "itsdangerous>=2.1", "PyYAML>=6"]
 [project.urls]
 Repository = "https://github.com/jacobabahn/ai-overview-searxng"
 Issues = "https://github.com/jacobabahn/ai-overview-searxng/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "ai_overview.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
