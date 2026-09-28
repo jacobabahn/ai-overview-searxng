@@ -5,8 +5,11 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import replace
 from typing import Any, Optional, Protocol
 
+from .. import __version__
 from ..config import Profile
 from ..errors import OverviewError
+
+USER_AGENT = f"searxng-ai-overview/{__version__}"
 
 
 def check_status(status: int) -> None:
@@ -46,7 +49,7 @@ def bounded(chunks: Iterable[bytes], deadline: float) -> Iterator[bytes]:
             yield chunk
 
 
-class HTTPXTransport:
+class _BaseTransport:
     def stream(
         self,
         url: str,
@@ -63,12 +66,25 @@ class HTTPXTransport:
         with self._request(
             "GET",
             url,
-            {"User-Agent": "searxng-ai-overview/0.1.0"},
+            {"User-Agent": USER_AGENT},
             None,
             replace(profile, timeout_seconds=10, read_timeout_seconds=10),
         ) as chunks:
             return read_catalog(chunks)
 
+    def _request(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: Optional[dict[str, Any]],
+        profile: Profile,
+        deadline: Optional[float] = None,
+    ) -> AbstractContextManager[Iterable[bytes]]:
+        raise NotImplementedError
+
+
+class HTTPXTransport(_BaseTransport):
     @contextmanager
     def _request(
         self,
@@ -102,29 +118,7 @@ class HTTPXTransport:
             raise OverviewError("connection", "Could not connect to the provider.") from None
 
 
-class SearXNGTransport:
-    def stream(
-        self,
-        url: str,
-        headers: dict[str, str],
-        body: dict[str, Any],
-        profile: Profile,
-        *,
-        deadline: Optional[float] = None,
-    ) -> AbstractContextManager[Iterable[bytes]]:
-        return self._request("POST", url, headers, body, profile, deadline)
-
-    def get_json(self, url: str, profile: Profile) -> dict[str, Any]:
-        # The Go catalog is public. Never send credentials to discovery requests.
-        with self._request(
-            "GET",
-            url,
-            {"User-Agent": "searxng-ai-overview/0.1.0"},
-            None,
-            replace(profile, timeout_seconds=10, read_timeout_seconds=10),
-        ) as chunks:
-            return read_catalog(chunks)
-
+class SearXNGTransport(_BaseTransport):
     @contextmanager
     def _request(
         self,
