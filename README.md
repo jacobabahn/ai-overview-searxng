@@ -168,7 +168,12 @@ follow your SearXNG settings.
   citations resolve only to the supplied sources.
 - Signed state is readable and held in page memory. Reloading starts fresh.
   State expires after 30 minutes by default and can be replayed until expiry.
-  Only the selected model preference is saved in local storage.
+  Local storage holds only the selected model preference and a random ID
+  that scopes the answer cache to your browser.
+- Completed first answers are cached in each worker's memory for 30 minutes
+  (256 entries by default), so reloading, going back, or repeating a search in
+  the same browser does not pay for a new generation. Regenerate always asks the
+  model again. Set `answer_cache_entries: 0` to disable the cache.
 - Defaults allow 8 sources, 12,000 bytes of evidence, and 2 simultaneous
   generations **per worker**. There are no shared admission or per-user spending
   controls for public instances.

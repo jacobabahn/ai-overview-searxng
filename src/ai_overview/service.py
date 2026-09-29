@@ -1,9 +1,12 @@
+import hashlib
 import json
+import logging
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, replace
 from typing import Optional
 
+from .cache import AnswerCache
 from .config import Config, Profile
 from .errors import OverviewError
 from .evidence import encoded_size
@@ -13,6 +16,7 @@ from .providers.transport import Transport, remaining
 from .routing import selected_profile
 from .state import StateSigner
 
+log = logging.getLogger(__name__)
 Retriever = Callable[[str, SearchOptions, float], tuple[Source, ...]]
 
 ANSWER_PROMPT = """Write a concise search overview using only the supplied search snippets.
@@ -47,18 +51,46 @@ class GenerationService:
         self.signer = signer
         self.transport = transport
         self.retrieve = retrieve
+        self.cache = (
+            AnswerCache(config.answer_cache_entries, config.answer_cache_ttl_seconds)
+            if config.answer_cache_entries
+            else None
+        )
 
-    def run(self, state: Conversation, question: Optional[str]) -> Iterator[Event]:
-        if state.profile not in self.config.profiles:
-            raise OverviewError("configuration", "This model profile is no longer available.")
+    def cached(
+        self, state: Conversation, question: Optional[str], client: Optional[str]
+    ) -> Optional[list[Event]]:
+        """Replay a stored first answer without admission or provider work."""
+        key = self._cache_key(state, question, client)
+        answer = self.cache.get(key) if self.cache and key else None
+        if key:
+            log.debug("Answer cache %s", "hit" if answer else "miss")
+        if answer is None:
+            return None
+        state = self._pinned(state)[1]
+        return [
+            Event("sources", {"sources": [asdict(s) for s in state.sources]}),
+            Event("text_delta", {"text": answer}),
+            self._done(replace(state, turns=(Turn(state.query, answer, state.sources),))),
+        ]
+
+    def run(
+        self,
+        state: Conversation,
+        question: Optional[str],
+        client: Optional[str] = None,
+        lookup: bool = True,
+    ) -> Iterator[Event]:
+        """Generate a turn; a completed first answer replaces any cached one."""
         if len(state.turns) >= self.config.max_turns:
             raise OverviewError("turn_limit", "This conversation is full. Start a new search.")
         if bool(state.turns) != bool(question):
             raise OverviewError("invalid_request", "Run a search before asking a follow-up.")
-        profile = selected_profile(self.config.profiles[state.profile], state)
-        # Pin even the default model on the first completed turn, so changing
-        # server defaults cannot silently change an existing conversation.
-        state = replace(state, model=profile.model, protocol=profile.protocol)
+        if lookup and (hit := self.cached(state, question, client)):
+            yield from hit
+            return
+        profile, state = self._pinned(state)
+        key = self._cache_key(state, question, client)
         deadline = time.monotonic() + profile.timeout_seconds
         provider = Provider(profile, self.transport)
         current = question or state.query
@@ -103,7 +135,22 @@ class GenerationService:
             sources=sources,
             turns=(*state.turns, Turn(question=current, answer=answer, sources=sources)),
         )
-        yield Event(
+        done = self._done(updated)
+        # Store only complete answers; a stopped or failed stream never reaches here.
+        if self.cache and key:
+            self.cache.put(key, answer)
+        yield done
+
+    def _pinned(self, state: Conversation) -> tuple[Profile, Conversation]:
+        if state.profile not in self.config.profiles:
+            raise OverviewError("configuration", "This model profile is no longer available.")
+        profile = selected_profile(self.config.profiles[state.profile], state)
+        # Pin even the default model on the first completed turn, so changing
+        # server defaults cannot silently change an existing conversation.
+        return profile, replace(state, model=profile.model, protocol=profile.protocol)
+
+    def _done(self, updated: Conversation) -> Event:
+        return Event(
             "done",
             {
                 "token": self.signer.dumps(updated),
@@ -111,6 +158,29 @@ class GenerationService:
                 "can_follow_up": len(updated.turns) < self.config.max_turns,
             },
         )
+
+    def _cache_key(
+        self, state: Conversation, question: Optional[str], client: Optional[str]
+    ) -> Optional[str]:
+        # Only first answers are cached, and only within one browser, so a fast
+        # reply never reveals what another visitor searched.
+        if not client or question or state.turns or not state.sources:
+            return None
+        profile, state = self._pinned(state)
+        material = {
+            "client": client,
+            "query": state.query,
+            "profile": state.profile,
+            "model": state.model,
+            "protocol": state.protocol,
+            "lang": state.search.lang,
+            "sources": [asdict(s) for s in state.sources],
+            "prompt": ANSWER_PROMPT,
+            "options": profile.options,
+            "max_output_tokens": profile.max_output_tokens,
+        }
+        encoded = json.dumps(material, sort_keys=True, ensure_ascii=False).encode()
+        return hashlib.sha256(encoded).hexdigest()
 
     def _plan(
         self, provider: Provider, state: Conversation, question: str, deadline: float

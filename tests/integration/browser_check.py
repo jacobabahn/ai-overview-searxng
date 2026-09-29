@@ -131,8 +131,12 @@ def main() -> None:
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.keyboard.press("Escape")
         panel.get_by_role("button", name="Summary settings").click()
-        with page.expect_request(lambda request: request.url.endswith("/stream")):
+        with page.expect_request(lambda request: request.url.endswith("/stream")) as regen:
             panel.get_by_role("button", name="Regenerate overview").click()
+        # Regenerate bypasses the answer cache for this browser.
+        client = page.evaluate("localStorage.getItem('searxng-ai-overview-client')")
+        body = regen.value.post_data_json or {}
+        assert body.get("fresh") is True and body.get("client") == client
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
@@ -220,7 +224,7 @@ def main() -> None:
         page.wait_for_function("document.querySelector('.ai-stop').hidden === false")
         assert len(pending_generation) == 1
         generation = pending_generation.pop()
-        assert generation.request.post_data_json == {"token": "selected-search"}
+        assert generation.request.post_data_json == {"token": "selected-search", "client": client}
         generation.fulfill(
             content_type="text/event-stream",
             body='event: text_delta\ndata: {"text":"Selected model answer"}\n\n'

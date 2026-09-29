@@ -7,6 +7,9 @@ evidence_bytes: 12000
 max_turns: 6
 token_ttl_seconds: 1800
 max_concurrent: 2
+# Per-worker memory cache of first answers; 0 disables it.
+answer_cache_entries: 256
+answer_cache_ttl_seconds: 1800
 
 profiles:
   ollama:

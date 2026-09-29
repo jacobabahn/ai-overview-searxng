@@ -202,6 +202,7 @@ function mount(panel) {
   let activeTurn;
   const conversation = new Conversation({
     token: initialToken,
+    client: cacheClient(),
     selected: {profile: panel.dataset.profile, model: panel.dataset.model},
     endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null},
     onEvent: renderEvent,
@@ -254,7 +255,7 @@ function mount(panel) {
   regenerate.addEventListener("click", async () => {
     closeOptions();
     showConversation();
-    try { await conversation.restart(); }
+    try { await conversation.restart(undefined, {fresh: true}); }
     catch (error) { status.hidden = false; status.textContent = error.message; }
   });
 
@@ -417,6 +418,23 @@ function mount(panel) {
   conversation.start(saved).catch(error => {
     if (error.name !== "AbortError") { status.hidden = false; status.textContent = error.message; }
   });
+}
+
+// Random per-browser ID that scopes the server's answer cache; without storage,
+// requests carry no ID and are never cached.
+function cacheClient() {
+  const key = "searxng-ai-overview-client";
+  try {
+    let id = localStorage.getItem(key);
+    if (!/^[0-9a-f]{32}$/.test(id || "")) {
+      // getRandomValues, unlike randomUUID, also works on plain-HTTP LAN instances.
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return undefined;
+  }
 }
 
 document.querySelectorAll(".ai-overview").forEach(mount);

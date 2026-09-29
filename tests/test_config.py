@@ -88,6 +88,9 @@ def test_file_precedence(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
         ("AI_OVERVIEW_OPTIONS", "[]"),
         ("AI_OVERVIEW_OPTIONS", '{"messages": []}'),
         ("AI_OVERVIEW_OPTIONS", '{"think": "false"}'),
+        ("AI_OVERVIEW_ANSWER_CACHE_ENTRIES", "-1"),
+        ("AI_OVERVIEW_ANSWER_CACHE_ENTRIES", "many"),
+        ("AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS", "0"),
     ],
 )
 def test_invalid_environment_does_not_fall_back_to_file(
@@ -105,3 +108,19 @@ def test_environment_requires_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_OVERVIEW_BACKEND", "ollama")
     with pytest.raises(ValueError, match="explicit model"):
         Config.load()
+
+
+def test_answer_cache_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    base = {"default_profile": "p", "profiles": {"p": {"backend": "local", "model": "m"}}}
+    config = Config.from_dict(base)
+    assert (config.answer_cache_entries, config.answer_cache_ttl_seconds) == (256, 1800)
+    assert Config.from_dict({**base, "answer_cache_entries": 0}).answer_cache_entries == 0
+    for invalid in ({"answer_cache_entries": True}, {"answer_cache_ttl_seconds": 0}):
+        with pytest.raises(ValueError):
+            Config.from_dict({**base, **invalid})
+    monkeypatch.setenv("AI_OVERVIEW_BACKEND", "ollama")
+    monkeypatch.setenv("AI_OVERVIEW_MODEL", "test-model")
+    monkeypatch.setenv("AI_OVERVIEW_ANSWER_CACHE_ENTRIES", "0")
+    monkeypatch.setenv("AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS", "600")
+    config = Config.load()
+    assert (config.answer_cache_entries, config.answer_cache_ttl_seconds) == (0, 600)
