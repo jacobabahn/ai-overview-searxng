@@ -245,6 +245,7 @@ def main() -> None:
         assert followup.request.post_data_json == {
             "token": "selected-continuation",
             "question": "Why?",
+            "client": client,
         }
         followup.fulfill(
             content_type="text/event-stream",

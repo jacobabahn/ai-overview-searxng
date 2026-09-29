@@ -43,9 +43,15 @@ class ScriptedTransport:
         ]
 
 
-def make_service(answers: list[str]) -> tuple[GenerationService, list[str], ScriptedTransport]:
+def make_service(
+    answers: list[str], **settings: Any
+) -> tuple[GenerationService, list[str], ScriptedTransport]:
     config = Config.from_dict(
-        {"default_profile": "test", "profiles": {"test": {"backend": "local", "model": "test"}}}
+        {
+            "default_profile": "test",
+            "profiles": {"test": {"backend": "local", "model": "test"}},
+            **settings,
+        }
     )
     queries: list[str] = []
 
@@ -253,21 +259,30 @@ def test_expired_turn_does_not_start_provider(monkeypatch: pytest.MonkeyPatch) -
     assert not transport.calls
 
 
-def cache_state(url: str = "https://a.example", snippet: str = "Evidence") -> Any:
+def cache_state(url: str = "https://a.example") -> Any:
     return initial_state(
         "q?",
         build_sources(
-            [{"url": url, "content": snippet}, {"url": "https://b.example", "content": "More"}]
+            [{"url": url, "content": "Evidence"}, {"url": "https://b.example", "content": "More"}]
         ),
         "test",
     )
 
 
+def first_answer(
+    service: GenerationService, state: Any, client: Optional[str], fresh: bool = False
+) -> list[Event]:
+    """Serve a first answer the way the stream endpoint does."""
+    key = service.cache_key(state, client)
+    hit = None if fresh else service.cached(state, key)
+    return hit or list(service.run(state, None, key))
+
+
 def test_first_answer_is_replayed_for_the_same_browser() -> None:
     service, _, transport = make_service(["Cached [1]"])
-    first = list(service.run(cache_state(), None, "browser"))
+    first = first_answer(service, cache_state(), "browser")
     # A reload creates a new conversation ID, which must not affect the key.
-    replay = list(service.run(cache_state(), None, "browser"))
+    replay = first_answer(service, cache_state(), "browser")
     assert len(transport.calls) == 1
     assert [e.name for e in replay] == ["sources", "text_delta", "done"]
     assert replay[1].data == {"text": "Cached [1]"}
@@ -289,79 +304,68 @@ def test_first_answer_is_replayed_for_the_same_browser() -> None:
 )
 def test_changed_inputs_miss_the_cache(change: Any) -> None:
     service, _, transport = make_service(["One", "Two"])
-    list(service.run(cache_state(), None, "browser"))
-    list(service.run(change(cache_state()), None, "browser"))
+    first_answer(service, cache_state(), "browser")
+    first_answer(service, change(cache_state()), "browser")
     assert len(transport.calls) == 2
 
 
 def test_cache_is_scoped_to_one_browser_and_needs_an_id() -> None:
     service, _, transport = make_service(["One", "Two", "Three", "Four"])
-    list(service.run(cache_state(), None, "alice"))
-    list(service.run(cache_state(), None, "bob"))
-    list(service.run(cache_state(), None))
-    list(service.run(cache_state(), None))
+    for client in ("alice", "bob", None, None):
+        first_answer(service, cache_state(), client)
     assert len(transport.calls) == 4
 
 
 def test_prompt_and_model_settings_are_part_of_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
     service, _, transport = make_service(["One", "Two", "Three"])
-    list(service.run(cache_state(), None, "browser"))
+    first_answer(service, cache_state(), "browser")
     monkeypatch.setattr("ai_overview.service.ANSWER_PROMPT", "Different prompt")
-    list(service.run(cache_state(), None, "browser"))
+    first_answer(service, cache_state(), "browser")
     profile = replace(service.config.profiles["test"], max_output_tokens=500)
     service.config = replace(service.config, profiles={"test": profile})
-    list(service.run(cache_state(), None, "browser"))
+    first_answer(service, cache_state(), "browser")
     assert len(transport.calls) == 3
 
 
-def test_skipping_lookup_replaces_the_entry() -> None:
+def test_fresh_answer_replaces_the_entry() -> None:
     service, _, transport = make_service(["Old", "New"])
-    list(service.run(cache_state(), None, "browser"))
-    list(service.run(cache_state(), None, "browser", lookup=False))
-    replay = list(service.run(cache_state(), None, "browser"))
+    first_answer(service, cache_state(), "browser")
+    first_answer(service, cache_state(), "browser", fresh=True)
+    replay = first_answer(service, cache_state(), "browser")
     assert replay[1].data == {"text": "New"}
     assert len(transport.calls) == 2
 
 
 def test_follow_ups_are_never_cached() -> None:
-    service, _, transport = make_service(["First", '{"query":null}', "A", '{"query":null}', "B"])
-    events = list(service.run(cache_state(), None, "browser"))
+    service, _, _ = make_service(["First"])
+    events = first_answer(service, cache_state(), "browser")
     continuation = service.signer.loads(events[-1].data["token"])
-    list(service.run(continuation, "Why?", "browser"))
-    list(service.run(continuation, "Why?", "browser"))
-    assert len(transport.calls) == 5
+    assert service.cache_key(continuation, "browser") is None
 
 
 def test_stopped_and_failed_answers_are_not_cached() -> None:
     service, _, transport = make_service(["Partial", "", "Complete"])
+    key = service.cache_key(cache_state(), "browser")
     # Closing the generator is what a client disconnect or Stop does.
-    stream = cast(Generator[Event, None, None], service.run(cache_state(), None, "browser"))
+    stream = cast(Generator[Event, None, None], service.run(cache_state(), None, key))
     while next(stream).name != "text_delta":
         pass
     stream.close()
     with pytest.raises(OverviewError):
-        list(service.run(cache_state(), None, "browser"))
-    list(service.run(cache_state(), None, "browser"))
+        list(service.run(cache_state(), None, key))
+    assert service.cached(cache_state(), key) is None
+    first_answer(service, cache_state(), "browser")
     assert len(transport.calls) == 3
 
 
 def test_zero_entries_disables_the_cache() -> None:
-    service, _, transport = make_service(["One", "Two"])
-    service = GenerationService(
-        replace(service.config, answer_cache_entries=0),
-        service.signer,
-        transport,
-        service.retrieve,
-    )
-    list(service.run(cache_state(), None, "browser"))
-    list(service.run(cache_state(), None, "browser"))
+    service, _, _ = make_service([], answer_cache_entries=0)
     assert service.cache is None
-    assert len(transport.calls) == 2
+    assert service.cache_key(cache_state(), "browser") is None
 
 
 def test_web_serves_cache_hits_when_busy_and_fresh_bypasses() -> None:
-    service, _, transport = make_service(["Cached [1]", "Fresh [1]"])
-    service.config = replace(service.config, max_concurrent=1)
+    service, _, transport = make_service(["Cached [1]", "Fresh [1]"], max_concurrent=1)
     app = Flask(__name__)
     register(app, service)
     client = app.test_client()
@@ -386,5 +390,14 @@ def test_web_serves_cache_hits_when_busy_and_fresh_bypasses() -> None:
     assert b"Fresh [1]" in post(client="browser", fresh=True).data
     assert b"Fresh [1]" in post(client="browser").data
     assert len(transport.calls) == 3
-    assert post(client="x" * 65).status_code == 400
-    assert post(client="browser", fresh="yes").status_code == 400
+
+
+@pytest.mark.parametrize("body", [{"client": "x" * 65}, {"client": 1}, {"fresh": "yes"}])
+def test_web_rejects_invalid_cache_fields(body: dict[str, Any]) -> None:
+    service, _, transport = make_service([])
+    app = Flask(__name__)
+    register(app, service)
+    token = service.signer.dumps(cache_state())
+    response = app.test_client().post("/ai-overview/stream", json={"token": token, **body})
+    assert response.status_code == 400
+    assert not transport.calls

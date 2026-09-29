@@ -163,8 +163,8 @@ rates prove too low. Hits and misses are logged at debug level without keys.
 
 ## Browser contract
 
-Use `fetch` with a POST body and streaming SSE response. First-answer requests may
-include the answer-cache `client` ID and `fresh`. Events are `status`,
+Use `fetch` with a POST body and streaming SSE response. Requests may include
+the answer-cache `client` ID and `fresh`. Events are `status`,
 `sources`, `text_delta`, `done`, and `error`. A `done` event includes the next
 signed continuation. AbortController handles Stop and page navigation.
 
