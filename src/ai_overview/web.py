@@ -71,7 +71,13 @@ def register(
             if not request.is_json:
                 raise OverviewError("invalid_request", "Send a JSON request.")
             body = request.get_json(silent=True)
-            if not isinstance(body, dict) or set(body) - {"token", "question"}:
+            if not isinstance(body, dict) or set(body) - {"token", "question", "client", "fresh"}:
+                raise OverviewError("invalid_request", "Invalid overview request.")
+            client = body.get("client")
+            fresh = body.get("fresh", False)
+            if client is not None and (not isinstance(client, str) or not 0 < len(client) <= 64):
+                raise OverviewError("invalid_request", "Invalid overview request.")
+            if type(fresh) is not bool:
                 raise OverviewError("invalid_request", "Invalid overview request.")
             state = service.signer.loads(body.get("token"))
             question = body.get("question")
@@ -81,8 +87,12 @@ def register(
                         "invalid_request", "Enter a question under 2,000 characters."
                     )
                 question = question.strip()
+            # Cached answers cost nothing, so they bypass the concurrency limit.
+            hit = None if fresh else service.cached(state, question, client)
         except OverviewError as error:
             return _error_response(error, 403 if error.code == "invalid_state" else 400)
+        if hit:
+            return _stream_response(sse_event(event) for event in hit)
         if not slots.acquire(blocking=False):
             return _error_response(
                 OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
@@ -91,7 +101,9 @@ def register(
         def generate() -> Iterator[str]:
             try:
                 yield ": connected\n\n"
-                yield from (sse_event(event) for event in service.run(state, question))
+                yield from (
+                    sse_event(event) for event in service.run(state, question, client, lookup=False)
+                )
             except OverviewError as error:
                 yield sse_event(Event("error", {"code": error.code, "message": error.message}))
             except Exception as error:
@@ -105,17 +117,21 @@ def register(
             finally:
                 slots.release()
 
-        return Response(
-            stream_with_context(generate()),
-            mimetype="text/event-stream",
-            headers={
-                "Cache-Control": "no-store",
-                "X-Accel-Buffering": "no",
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
+        return _stream_response(generate())
 
     app.register_blueprint(bp)
+
+
+def _stream_response(body: Iterator[str]) -> Response:
+    return Response(
+        stream_with_context(body),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def render_panel(service: GenerationService, state: Conversation) -> Markup:

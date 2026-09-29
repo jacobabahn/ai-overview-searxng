@@ -42,6 +42,8 @@ class Config:
     token_ttl_seconds: int = 1800
     max_concurrent: int = 2
     model_picker: bool = False
+    answer_cache_entries: int = 256
+    answer_cache_ttl_seconds: int = 1800
 
     @classmethod
     def load(cls, path: Optional[str | Path] = None) -> Self:
@@ -83,7 +85,15 @@ class Config:
                 profile["options"] = json.loads(os.environ["AI_OVERVIEW_OPTIONS"])
             except ValueError:
                 raise ValueError("AI_OVERVIEW_OPTIONS must be a JSON object") from None
-        return cls.from_dict({"default_profile": "default", "profiles": {"default": profile}})
+        data: dict[str, Any] = {"default_profile": "default", "profiles": {"default": profile}}
+        for field_name in ("answer_cache_entries", "answer_cache_ttl_seconds"):
+            name = "AI_OVERVIEW_" + field_name.upper()
+            if name in os.environ:
+                try:
+                    data[field_name] = int(os.environ[name])
+                except ValueError:
+                    raise ValueError(f"{name} must be an integer") from None
+        return cls.from_dict(data)
 
     @classmethod
     def from_dict(cls, data: Any) -> Self:
@@ -185,6 +195,10 @@ class Config:
             if k == "model_picker":
                 if type(v) is not bool:
                     raise ValueError("model_picker must be a boolean")
+            elif k == "answer_cache_entries":
+                # Zero disables the answer cache.
+                if type(v) is not int or v < 0:
+                    raise ValueError("answer_cache_entries must be a non-negative integer")
             else:
                 _positive(v, k)
         if other.get("max_sources", 8) > 30 or other.get("max_turns", 6) > 12:

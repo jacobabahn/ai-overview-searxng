@@ -40,6 +40,7 @@ sequenceDiagram
 - `evidence.py`: normalize and deduplicate HTTP(S) sources; bound snippet context.
 - `service.py`: prompt construction, follow-up planning, evidence selection,
   normalized events, and successful conversation updates.
+- `cache.py`: per-worker, in-memory cache of completed first answers.
 - `providers/`: request translation and incremental response parsing for Chat
   Completions, Responses, Anthropic Messages, Gemini, and Ollama's native chat protocol.
 - `config.py`: YAML or environment configuration, shared profile validation,
@@ -104,8 +105,8 @@ choices with a warning and a short retry delay.
 `POST /ai-overview/models` and `/select` require signed search state and same-origin
 requests. Selection is allowed only from initial state and the server's choice
 list; it returns a signed model/protocol and fresh conversation ID. The stream
-endpoint never accepts an unsigned model or endpoint override. Only the chosen
-profile/model preference is persisted in local storage.
+endpoint never accepts an unsigned model or endpoint override. Local storage
+holds only the chosen profile/model preference and the answer-cache browser ID.
 
 HTTP transport is injectable: use SearXNG's network layer in the plugin to retain
 its proxy/TLS policy, and HTTPX for standalone development and adapter testing.
@@ -138,9 +139,32 @@ question or silently remove conversation turns: stop at the configured limit
 and invite a new search. Context passed to the model retains source snapshots
 for prior turns so old citation numbers remain interpretable.
 
+## Answer cache
+
+Completed first answers are kept in a per-worker, in-memory LRU cache
+(`answer_cache_entries`, default 256; `answer_cache_ttl_seconds`, default 1800).
+Nothing is written to disk, and a restart empties it. The key is a SHA-256 hash of
+a random browser ID, the query, the pinned profile/model/protocol, the search
+language, the ordered sources including snippets, the answer prompt, and the
+profile's `options` and `max_output_tokens`. The conversation ID is excluded,
+because every reload mints a new one.
+
+The browser ID is generated client-side and kept in local storage. Scoping the
+key to it means a fast reply never reveals that another visitor recently ran the
+same search. Requests without an ID (storage blocked) are never cached. Follow-ups
+are never cached. Only answers that complete are stored; Stop, disconnects,
+errors, and empty answers leave the cache unchanged.
+
+A hit replays `sources`, one `text_delta`, and `done` with a freshly signed
+continuation. Hits are checked before admission, so they are never refused as
+busy. Regenerate sends `fresh: true`, which skips the lookup and replaces the
+entry. `AnswerCache.get`/`put` is the seam for a shared store if per-worker hit
+rates prove too low. Hits and misses are logged at debug level without keys.
+
 ## Browser contract
 
-Use `fetch` with a POST body and streaming SSE response. Events are `status`,
+Use `fetch` with a POST body and streaming SSE response. First-answer requests may
+include the answer-cache `client` ID and `fresh`. Events are `status`,
 `sources`, `text_delta`, `done`, and `error`. A `done` event includes the next
 signed continuation. AbortController handles Stop and page navigation.
 

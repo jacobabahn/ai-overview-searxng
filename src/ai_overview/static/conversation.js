@@ -54,6 +54,7 @@ export async function* events(body) {
 export class Conversation {
   #initialToken;
   #token;
+  #client;
   #selected;
   #endpoints;
   #fetch;
@@ -65,8 +66,9 @@ export class Conversation {
   #choices = [];
   #modelsPending = null;
 
-  constructor({token, selected, endpoints, onEvent, fetch: request = globalThis.fetch.bind(globalThis)}) {
+  constructor({token, selected, endpoints, onEvent, client, fetch: request = globalThis.fetch.bind(globalThis)}) {
     this.#initialToken = this.#token = token;
+    this.#client = client;
     this.#selected = {...selected};
     this.#endpoints = endpoints;
     this.#fetch = request;
@@ -179,14 +181,15 @@ export class Conversation {
     return this.run(this.#question);
   }
 
-  restart(choice = this.#selected) {
+  // `fresh` bypasses the server's answer cache and replaces its entry.
+  restart(choice = this.#selected, {fresh = false} = {}) {
     return this.#exclusive("selecting", async operation => {
       if (this.#endpoints.select) await this.#select(choice, operation);
       else {
         this.#token = this.#initialToken;
         this.#reset();
       }
-      await this.#generate(undefined, operation);
+      await this.#generate(undefined, operation, fresh);
     });
   }
 
@@ -194,7 +197,7 @@ export class Conversation {
     this.#active?.controller.abort();
   }
 
-  async #generate(question, operation) {
+  async #generate(question, operation, fresh = false) {
     const signal = operation.controller.signal;
     operation.phase = "streaming";
     this.#question = question;
@@ -210,7 +213,13 @@ export class Conversation {
           const response = await this.#fetch(this.#endpoints.stream, {
             method: "POST", credentials: "same-origin", signal,
             headers: {"Content-Type": "application/json", "Accept": "text/event-stream"},
-            body: JSON.stringify({token: this.#token, ...(question ? {question} : {})}),
+            body: JSON.stringify({
+              token: this.#token,
+              ...(question ? {question} : {}),
+              // The cache key is scoped to this browser; follow-ups are never cached.
+              ...(!question && this.#client ? {client: this.#client} : {}),
+              ...(fresh ? {fresh: true} : {}),
+            }),
           });
           if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
             throw new Error("Could not start the overview. Try again.");

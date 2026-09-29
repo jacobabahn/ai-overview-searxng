@@ -1,8 +1,8 @@
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import pytest
 from flask import Flask
@@ -10,7 +10,7 @@ from flask import Flask
 from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
 from ai_overview.evidence import build_sources
-from ai_overview.models import SearchOptions, Source
+from ai_overview.models import Event, SearchOptions, Source
 from ai_overview.service import GenerationService
 from ai_overview.state import StateSigner, initial_state
 from ai_overview.web import register, render_panel
@@ -173,7 +173,7 @@ def test_followup_shares_deadline_and_never_commits_late_completion(
     expected_calls: int,
     succeeds: bool,
 ) -> None:
-    from ai_overview.models import Event, Turn
+    from ai_overview.models import Turn
 
     clock = [100.0]
     monkeypatch.setattr("ai_overview.service.time.monotonic", lambda: clock[0])
@@ -251,3 +251,140 @@ def test_expired_turn_does_not_start_provider(monkeypatch: pytest.MonkeyPatch) -
         next(stream)
     assert caught.value.code == "timeout"
     assert not transport.calls
+
+
+def cache_state(url: str = "https://a.example", snippet: str = "Evidence") -> Any:
+    return initial_state(
+        "q?",
+        build_sources(
+            [{"url": url, "content": snippet}, {"url": "https://b.example", "content": "More"}]
+        ),
+        "test",
+    )
+
+
+def test_first_answer_is_replayed_for_the_same_browser() -> None:
+    service, _, transport = make_service(["Cached [1]"])
+    first = list(service.run(cache_state(), None, "browser"))
+    # A reload creates a new conversation ID, which must not affect the key.
+    replay = list(service.run(cache_state(), None, "browser"))
+    assert len(transport.calls) == 1
+    assert [e.name for e in replay] == ["sources", "text_delta", "done"]
+    assert replay[1].data == {"text": "Cached [1]"}
+    assert replay[0].data == first[0].data
+    continued = service.signer.loads(replay[-1].data["token"])
+    assert continued.model == "test"
+    assert continued.turns[0].answer == "Cached [1]"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda s: replace(s, sources=tuple(reversed(s.sources))),
+        lambda s: replace(s, sources=(replace(s.sources[0], snippet="Edited"), *s.sources[1:])),
+        lambda s: replace(s, model="other"),
+        lambda s: replace(s, query="Q?"),
+        lambda s: replace(s, search=replace(s.search, lang="de")),
+    ],
+)
+def test_changed_inputs_miss_the_cache(change: Any) -> None:
+    service, _, transport = make_service(["One", "Two"])
+    list(service.run(cache_state(), None, "browser"))
+    list(service.run(change(cache_state()), None, "browser"))
+    assert len(transport.calls) == 2
+
+
+def test_cache_is_scoped_to_one_browser_and_needs_an_id() -> None:
+    service, _, transport = make_service(["One", "Two", "Three", "Four"])
+    list(service.run(cache_state(), None, "alice"))
+    list(service.run(cache_state(), None, "bob"))
+    list(service.run(cache_state(), None))
+    list(service.run(cache_state(), None))
+    assert len(transport.calls) == 4
+
+
+def test_prompt_and_model_settings_are_part_of_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _, transport = make_service(["One", "Two", "Three"])
+    list(service.run(cache_state(), None, "browser"))
+    monkeypatch.setattr("ai_overview.service.ANSWER_PROMPT", "Different prompt")
+    list(service.run(cache_state(), None, "browser"))
+    profile = replace(service.config.profiles["test"], max_output_tokens=500)
+    service.config = replace(service.config, profiles={"test": profile})
+    list(service.run(cache_state(), None, "browser"))
+    assert len(transport.calls) == 3
+
+
+def test_skipping_lookup_replaces_the_entry() -> None:
+    service, _, transport = make_service(["Old", "New"])
+    list(service.run(cache_state(), None, "browser"))
+    list(service.run(cache_state(), None, "browser", lookup=False))
+    replay = list(service.run(cache_state(), None, "browser"))
+    assert replay[1].data == {"text": "New"}
+    assert len(transport.calls) == 2
+
+
+def test_follow_ups_are_never_cached() -> None:
+    service, _, transport = make_service(["First", '{"query":null}', "A", '{"query":null}', "B"])
+    events = list(service.run(cache_state(), None, "browser"))
+    continuation = service.signer.loads(events[-1].data["token"])
+    list(service.run(continuation, "Why?", "browser"))
+    list(service.run(continuation, "Why?", "browser"))
+    assert len(transport.calls) == 5
+
+
+def test_stopped_and_failed_answers_are_not_cached() -> None:
+    service, _, transport = make_service(["Partial", "", "Complete"])
+    # Closing the generator is what a client disconnect or Stop does.
+    stream = cast(Generator[Event, None, None], service.run(cache_state(), None, "browser"))
+    while next(stream).name != "text_delta":
+        pass
+    stream.close()
+    with pytest.raises(OverviewError):
+        list(service.run(cache_state(), None, "browser"))
+    list(service.run(cache_state(), None, "browser"))
+    assert len(transport.calls) == 3
+
+
+def test_zero_entries_disables_the_cache() -> None:
+    service, _, transport = make_service(["One", "Two"])
+    service = GenerationService(
+        replace(service.config, answer_cache_entries=0),
+        service.signer,
+        transport,
+        service.retrieve,
+    )
+    list(service.run(cache_state(), None, "browser"))
+    list(service.run(cache_state(), None, "browser"))
+    assert service.cache is None
+    assert len(transport.calls) == 2
+
+
+def test_web_serves_cache_hits_when_busy_and_fresh_bypasses() -> None:
+    service, _, transport = make_service(["Cached [1]", "Fresh [1]"])
+    service.config = replace(service.config, max_concurrent=1)
+    app = Flask(__name__)
+    register(app, service)
+    client = app.test_client()
+
+    def post(**body: Any) -> Any:
+        token = service.signer.dumps(cache_state())
+        return client.post("/ai-overview/stream", json={"token": token, **body})
+
+    assert b"event: done" in post(client="browser").data
+    # Hold the only admission slot open with an unfinished generation.
+    held = service.signer.dumps(cache_state("https://other.example"))
+    transport.answers.insert(0, "Held")
+    busy = client.post("/ai-overview/stream", json={"token": held}, buffered=False)
+    chunks = iter(busy.response)
+    while "text_delta" not in str(next(chunks)):
+        pass
+    assert post(client="other").status_code == 429
+    hit = post(client="browser")
+    assert hit.status_code == 200
+    assert b"Cached [1]" in hit.data
+    busy.close()
+    assert b"Fresh [1]" in post(client="browser", fresh=True).data
+    assert b"Fresh [1]" in post(client="browser").data
+    assert len(transport.calls) == 3
+    assert post(client="x" * 65).status_code == 400
+    assert post(client="browser", fresh="yes").status_code == 400

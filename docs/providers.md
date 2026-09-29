@@ -20,6 +20,8 @@ service instead of mounting `overview.yml`:
 | `AI_OVERVIEW_TIMEOUT_SECONDS` | Positive integer; default 90. |
 | `AI_OVERVIEW_READ_TIMEOUT_SECONDS` | Positive integer; default 15. |
 | `AI_OVERVIEW_OPTIONS` | JSON object of validated provider options, e.g. `'{"think":false,"num_ctx":8192}'` for Ollama. |
+| `AI_OVERVIEW_ANSWER_CACHE_ENTRIES` | Non-negative integer; default 256. `0` disables the answer cache. |
+| `AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS` | Positive integer; default 1,800. |
 
 Hosted backends also read their usual key variables: `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. An authenticated

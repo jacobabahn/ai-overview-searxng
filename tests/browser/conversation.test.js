@@ -3,11 +3,12 @@ import {test} from "node:test";
 import {Conversation} from "../../src/ai_overview/static/conversation.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function harness(picker = true) {
+function harness(picker = true, client) {
   const calls = [];
   const events = [];
   const conversation = new Conversation({
     token: "original-search",
+    client,
     selected: {profile: "go", model: "first"},
     endpoints: {stream: "/stream", ...(picker ? {models: "/models", select: "/select"} : {})},
     onEvent: (event, state) => events.push({event, state}),
@@ -221,4 +222,16 @@ test("provider limits, other HTTP failures, and partial answers never auto-retry
     assert.equal(events.some(e => e.event.name === "waiting"), false);
     t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 1);
   }
+});
+
+test("the browser cache ID is sent only for first answers, and Regenerate asks for a fresh one", async () => {
+  const {conversation: c, calls} = harness(false, "browser-id");
+  let work = c.start(); calls[0].resolve(done("continuation")); await work;
+  assert.deepEqual(calls[0].body, {token: "original-search", client: "browser-id"});
+  work = c.run("Why?"); calls[1].resolve(done("next")); await work;
+  assert.deepEqual(calls[1].body, {token: "continuation", question: "Why?"});
+  work = c.restart(undefined, {fresh: true}); calls[2].resolve(done("regenerated")); await work;
+  assert.deepEqual(calls[2].body, {token: "original-search", client: "browser-id", fresh: true});
+  work = c.retry(); await work;
+  assert.equal(calls.length, 3);
 });
