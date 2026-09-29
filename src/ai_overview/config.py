@@ -73,26 +73,14 @@ class Config:
                 profile[field_name] = os.environ[name]
         if "AI_OVERVIEW_API_KEY" in os.environ:
             profile["api_key_env"] = "AI_OVERVIEW_API_KEY"
-        for field_name in ("max_output_tokens", "timeout_seconds", "read_timeout_seconds"):
-            name = "AI_OVERVIEW_" + field_name.upper()
-            if name in os.environ:
-                try:
-                    profile[field_name] = int(os.environ[name])
-                except ValueError:
-                    raise ValueError(f"{name} must be a positive integer") from None
+        _env_ints(profile, ("max_output_tokens", "timeout_seconds", "read_timeout_seconds"))
         if "AI_OVERVIEW_OPTIONS" in os.environ:
             try:
                 profile["options"] = json.loads(os.environ["AI_OVERVIEW_OPTIONS"])
             except ValueError:
                 raise ValueError("AI_OVERVIEW_OPTIONS must be a JSON object") from None
         data: dict[str, Any] = {"default_profile": "default", "profiles": {"default": profile}}
-        for field_name in ("answer_cache_entries", "answer_cache_ttl_seconds"):
-            name = "AI_OVERVIEW_" + field_name.upper()
-            if name in os.environ:
-                try:
-                    data[field_name] = int(os.environ[name])
-                except ValueError:
-                    raise ValueError(f"{name} must be an integer") from None
+        _env_ints(data, ("answer_cache_entries", "answer_cache_ttl_seconds"))
         return cls.from_dict(data)
 
     @classmethod
@@ -195,12 +183,9 @@ class Config:
             if k == "model_picker":
                 if type(v) is not bool:
                     raise ValueError("model_picker must be a boolean")
-            elif k == "answer_cache_entries":
-                # Zero disables the answer cache.
-                if type(v) is not int or v < 0:
-                    raise ValueError("answer_cache_entries must be a non-negative integer")
             else:
-                _positive(v, k)
+                # Zero entries disables the answer cache.
+                _positive(v, k, minimum=0 if k == "answer_cache_entries" else 1)
         if other.get("max_sources", 8) > 30 or other.get("max_turns", 6) > 12:
             raise ValueError("At most 30 sources and 12 turns are supported")
         if other.get("evidence_bytes", 12000) > 24000:
@@ -208,6 +193,18 @@ class Config:
         return cls(default, profiles, **other)
 
 
-def _positive(value: Any, name: str) -> None:
-    if type(value) is not int or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
+def _positive(value: Any, name: str, minimum: int = 1) -> None:
+    if type(value) is not int or value < minimum:
+        kind = "positive" if minimum > 0 else "non-negative"
+        raise ValueError(f"{name} must be a {kind} integer")
+
+
+def _env_ints(target: dict[str, Any], fields: tuple[str, ...]) -> None:
+    """Copy AI_OVERVIEW_<FIELD> integers into target; from_dict checks their range."""
+    for field_name in fields:
+        name = "AI_OVERVIEW_" + field_name.upper()
+        if name in os.environ:
+            try:
+                target[field_name] = int(os.environ[name])
+            except ValueError:
+                raise ValueError(f"{name} must be an integer") from None

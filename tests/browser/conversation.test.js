@@ -224,12 +224,12 @@ test("provider limits, other HTTP failures, and partial answers never auto-retry
   }
 });
 
-test("the browser cache ID is sent only for first answers, and Regenerate asks for a fresh one", async () => {
+test("the browser cache ID is sent with requests, and Regenerate asks for a fresh answer", async () => {
   const {conversation: c, calls} = harness(false, "browser-id");
   let work = c.start(); calls[0].resolve(done("continuation")); await work;
   assert.deepEqual(calls[0].body, {token: "original-search", client: "browser-id"});
   work = c.run("Why?"); calls[1].resolve(done("next")); await work;
-  assert.deepEqual(calls[1].body, {token: "continuation", question: "Why?"});
+  assert.deepEqual(calls[1].body, {token: "continuation", question: "Why?", client: "browser-id"});
   work = c.restart(undefined, {fresh: true}); calls[2].resolve(done("regenerated")); await work;
   assert.deepEqual(calls[2].body, {token: "original-search", client: "browser-id", fresh: true});
   work = c.retry(); await work;

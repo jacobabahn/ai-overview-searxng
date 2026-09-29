@@ -216,8 +216,8 @@ export class Conversation {
             body: JSON.stringify({
               token: this.#token,
               ...(question ? {question} : {}),
-              // The cache key is scoped to this browser; follow-ups are never cached.
-              ...(!question && this.#client ? {client: this.#client} : {}),
+              // Scopes the server's answer cache to this browser.
+              ...(this.#client ? {client: this.#client} : {}),
               ...(fresh ? {fresh: true} : {}),
             }),
           });
