@@ -87,9 +87,8 @@ def register(
                         "invalid_request", "Enter a question under 2,000 characters."
                     )
                 question = question.strip()
-            key = service.cache_key(state, client)
             # Cached answers cost nothing, so they bypass the concurrency limit.
-            hit = None if fresh else service.cached(state, key)
+            hit = service.replay(state, question, client, fresh)
         except OverviewError as error:
             return _error_response(error, 403 if error.code == "invalid_state" else 400)
         if hit:
@@ -102,7 +101,7 @@ def register(
         def generate() -> Iterator[str]:
             try:
                 yield ": connected\n\n"
-                yield from (sse_event(event) for event in service.run(state, question, key))
+                yield from (sse_event(event) for event in service.run(state, question, client))
             except OverviewError as error:
                 yield sse_event(Event("error", {"code": error.code, "message": error.message}))
             except Exception as error:
