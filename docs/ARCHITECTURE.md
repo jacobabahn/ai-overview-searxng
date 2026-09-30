@@ -41,12 +41,17 @@ sequenceDiagram
 - `service.py`: prompt construction, follow-up planning, evidence selection,
   normalized events, and successful conversation updates.
 - `cache.py`: per-worker, in-memory cache of completed first answers.
-- `providers/`: request translation and incremental response parsing for Chat
-  Completions, Responses, Anthropic Messages, Gemini, and Ollama's native chat protocol.
+- `providers/protocols.py`: one adapter per wire protocol (Chat Completions,
+  Responses, Anthropic Messages, Gemini, and Ollama's native chat), each owning its
+  options and their validation, auth headers, request body, framing, decoding, and
+  completion rule. Adding a protocol means adding one class to `PROTOCOLS`.
+- `providers/adapter.py`: `Provider` applies what every protocol shares: API-key
+  and backend headers, the stream loop, invalid-event handling, and the output limit.
 - `config.py`: YAML or environment configuration, shared profile validation,
   server-side credentials, and limits.
-- `routing.py`: provider defaults, model/protocol routes, endpoint selection, and
-  compatible options, shared by initial configuration and signed selections.
+- `routing.py`: backend defaults, Go model/protocol routes, endpoint selection, and
+  filtering options to the selected protocol, shared by initial configuration and
+  signed selections.
 - `catalog.py`: cached Go model discovery, documented protocol routes, and
   validation of model choices before signing a new conversation.
 - `static/conversation.js`: request ordering, model selection, retry, cancellation,

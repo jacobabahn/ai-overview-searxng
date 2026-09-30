@@ -7,7 +7,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from .routing import DEFAULTS, EXTRA_OPTIONS, SUFFIXES, go_endpoint
+from .providers.protocols import PROTOCOLS
+from .routing import DEFAULTS, SUFFIXES, go_endpoint
 
 DEFAULT_CONFIG_PATH = Path("/etc/searxng/overview.yml")
 
@@ -127,7 +128,7 @@ class Config:
                     values["endpoint"] = go_endpoint(endpoint, values["protocol"])
             if not isinstance(values.get("model"), str) or not values["model"].strip():
                 raise ValueError(f"Set an explicit model in profile {name}")
-            if values["protocol"] not in EXTRA_OPTIONS:
+            if values["protocol"] not in PROTOCOLS:
                 raise ValueError(f"Unknown protocol in profile {name}")
             if backend == "gemini" and values["protocol"] != "gemini":
                 raise ValueError("The Gemini backend requires the gemini protocol")
@@ -160,19 +161,10 @@ class Config:
                 raise ValueError("Profile headers must contain plain strings")
             if any(k.lower() in {"host", "content-length", "transfer-encoding"} for k in headers):
                 raise ValueError("Transport headers cannot be overridden")
-            if not isinstance(options, dict) or set(options) - EXTRA_OPTIONS[values["protocol"]]:
+            adapter = PROTOCOLS[values["protocol"]]
+            if not isinstance(options, dict) or set(options) - adapter.options:
                 raise ValueError(f"Unsupported provider option in profile {name}")
-            if values["protocol"] == "ollama" and "think" in options:
-                if type(options["think"]) is not bool:
-                    raise ValueError("Ollama think must be a boolean")
-            if values["protocol"] == "chat" and "thinking" in options:
-                thinking = options["thinking"]
-                if (
-                    not isinstance(thinking, dict)
-                    or set(thinking) != {"type"}
-                    or thinking["type"] not in ("enabled", "disabled")
-                ):
-                    raise ValueError("Chat thinking must contain type: enabled or disabled")
+            adapter.validate_options(options)
             values["api_key"] = os.getenv(key_env, "") if key_env else ""
             profiles[name] = Profile(**values)
         default = data.get("default_profile")

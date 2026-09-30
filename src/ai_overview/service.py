@@ -11,7 +11,7 @@ from .config import Config, Profile
 from .errors import OverviewError
 from .evidence import encoded_size
 from .models import Conversation, Event, Message, Plan, SearchOptions, Source, Turn
-from .providers import Provider
+from .providers.adapter import Provider
 from .providers.transport import Transport, remaining
 from .routing import selected_profile
 from .state import StateSigner

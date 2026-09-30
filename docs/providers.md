@@ -78,7 +78,8 @@ root are ignored by Git.
 
 All profiles require an explicit `model`. Set `max_output_tokens` to accommodate
 your model's answer and reasoning budget. Model-specific reasoning controls can
-go in validated `options`; supported fields are listed in [routing.py](../src/ai_overview/routing.py).
+go in validated `options`; supported fields are listed per protocol in
+[protocols.py](../src/ai_overview/providers/protocols.py).
 `planning_max_output_tokens` separately sets the follow-up planning budget
 (default 1,200), including any reasoning tokens counted by the provider.
 

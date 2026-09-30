@@ -9,8 +9,9 @@ import pytest
 from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
 from ai_overview.models import Message
-from ai_overview.providers import Provider
+from ai_overview.providers.adapter import Provider
 from ai_overview.providers.parsing import sse
+from ai_overview.providers.protocols import PROTOCOLS
 from ai_overview.providers.transport import HTTPXTransport
 
 
@@ -222,18 +223,7 @@ def test_chat_thinking_control_reaches_provider(mode: str) -> None:
 @pytest.mark.parametrize("thinking", [False, None, {}, {"type": "auto"}, {"type": []}])
 def test_invalid_chat_thinking_control(thinking: Any) -> None:
     with pytest.raises(ValueError, match="Chat thinking"):
-        Config.from_dict(
-            {
-                "default_profile": "test",
-                "profiles": {
-                    "test": {
-                        "backend": "local",
-                        "model": "test",
-                        "options": {"thinking": thinking},
-                    }
-                },
-            }
-        )
+        PROTOCOLS["chat"].validate_options({"thinking": thinking})
 
 
 def test_http_transport_caps_io_timeout_to_remaining_turn_budget(
@@ -286,11 +276,51 @@ def test_ollama_thinking_control_reaches_overview_and_planner(think: bool) -> No
 @pytest.mark.parametrize("think", ["false", None, 0, {}, []])
 def test_invalid_ollama_thinking_control(think: Any) -> None:
     with pytest.raises(ValueError, match="Ollama think"):
+        PROTOCOLS["ollama"].validate_options({"think": think})
+
+
+def test_config_validates_option_values_with_the_profile_protocol() -> None:
+    with pytest.raises(ValueError, match="Ollama think"):
         Config.from_dict(
             {
                 "default_profile": "test",
                 "profiles": {
-                    "test": {"backend": "ollama", "model": "test", "options": {"think": think}}
+                    "test": {"backend": "ollama", "model": "test", "options": {"think": "no"}}
                 },
             }
         )
+
+
+@pytest.mark.parametrize(
+    "backend,protocol,key,expected",
+    [
+        ("local", "chat", "", "Basic configured"),
+        ("local", "chat", "secret", "Bearer secret"),
+        ("local", "anthropic", "secret", None),
+        ("gemini", "gemini", "secret", None),
+    ],
+)
+def test_configured_authorization_header_only_reaches_bearer_protocols(
+    backend: str,
+    protocol: str,
+    key: str,
+    expected: Optional[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEST_PROVIDER_KEY", key)
+    p = Config.from_dict(
+        {
+            "default_profile": "test",
+            "profiles": {
+                "test": {
+                    "backend": backend,
+                    "protocol": protocol,
+                    "model": "test-model",
+                    "api_key_env": "TEST_PROVIDER_KEY",
+                    "headers": {"Authorization": "Basic configured"},
+                }
+            },
+        }
+    ).profiles["test"]
+    _, headers, _ = Provider(p, RecordingTransport(b"")).request([], "session")
+    assert headers.get("Authorization") == expected

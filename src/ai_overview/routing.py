@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
 from .errors import OverviewError
+from .providers.protocols import PROTOCOLS
 
 if TYPE_CHECKING:
     from .config import Profile
@@ -22,13 +23,6 @@ DEFAULTS = {
     "gemini": ("gemini", "https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY"),
     "ollama": ("ollama", "http://localhost:11434/api/chat", None),
     "local": ("chat", "http://localhost:1234/v1/chat/completions", None),
-}
-EXTRA_OPTIONS = {
-    "chat": {"temperature", "top_p", "reasoning_effort", "thinking"},
-    "responses": {"temperature", "top_p", "reasoning"},
-    "gemini": {"temperature", "topP", "thinkingConfig"},
-    "ollama": {"temperature", "top_p", "num_ctx", "think"},
-    "anthropic": {"temperature", "top_p", "thinking"},
 }
 
 
@@ -80,7 +74,7 @@ GO_PROTOCOLS = {
         "anthropic",
     ),
 }
-SUFFIXES = {"chat": "chat/completions", "responses": "responses", "anthropic": "messages"}
+SUFFIXES = {name: p.go_suffix for name, p in PROTOCOLS.items() if p.go_suffix}
 
 
 def go_root(endpoint: str) -> str:
@@ -99,6 +93,8 @@ def selected_profile(profile: Profile, state: Conversation) -> Profile:
     endpoint = profile.endpoint
     if profile.backend == "opencode_go":
         endpoint = go_endpoint(endpoint, protocol)
+    adapter = PROTOCOLS[protocol]
+    same_model = state.model == profile.model and protocol == profile.protocol
     return replace(
         profile,
         model=state.model,
@@ -107,9 +103,7 @@ def selected_profile(profile: Profile, state: Conversation) -> Profile:
         options={
             k: v
             for k, v in profile.options.items()
-            if k in EXTRA_OPTIONS[protocol]
-            # Thinking payloads are model-specific, even across chat endpoints.
-            and (k != "thinking" or (state.model == profile.model and protocol == profile.protocol))
+            if k in adapter.options and (same_model or k not in adapter.model_options)
         },
     )
 

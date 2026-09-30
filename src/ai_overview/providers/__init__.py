@@ -1,3 +1,1 @@
-from .adapter import Provider
-
-__all__ = ["Provider"]
+"""Provider adapters; import `Provider` from `.adapter`."""
