@@ -144,10 +144,10 @@ for prior turns so old citation numbers remain interpretable.
 Completed first answers are kept in a per-worker, in-memory LRU cache
 (`answer_cache_entries`, default 256; `answer_cache_ttl_seconds`, default 1800).
 Nothing is written to disk, and a restart empties it. The key is a SHA-256 hash of
-a random browser ID, the query, the pinned profile/model/protocol, the search
-language, the ordered sources including snippets, the answer prompt, and the
-profile's `options` and `max_output_tokens`. The conversation ID is excluded,
-because every reload mints a new one.
+a random browser ID, the query, the pinned profile/model/protocol, the profile's
+backend and resolved endpoint, the search language, the ordered sources including
+snippets, the answer prompt, and the profile's `options` and `max_output_tokens`.
+The conversation ID is excluded, because every reload mints a new one.
 
 The browser ID is generated client-side and kept in local storage. Scoping the
 key to it means a fast reply never reveals that another visitor recently ran the
@@ -158,8 +158,10 @@ errors, and empty answers leave the cache unchanged.
 A hit replays `sources`, one `text_delta`, and `done` with a freshly signed
 continuation. Hits are checked before admission, so they are never refused as
 busy. Regenerate sends `fresh: true`, which skips the lookup and replaces the
-entry. `AnswerCache.get`/`put` is the seam for a shared store if per-worker hit
-rates prove too low. Hits and misses are logged at debug level without keys.
+entry. `GenerationService.replay` and `run` derive the key themselves; callers
+pass only the browser ID and `fresh`. `AnswerCache.get`/`put` is the seam for a
+shared store if per-worker hit rates prove too low. Hits and misses are logged at
+debug level without keys.
 
 ## Browser contract
 

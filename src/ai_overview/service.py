@@ -57,52 +57,44 @@ class GenerationService:
             else None
         )
 
-    def cache_key(self, state: Conversation, client: Optional[str]) -> Optional[str]:
-        """Key for a cacheable first answer, or None when it must not be cached."""
-        # Only first answers are cached, and only within one browser, so a fast
-        # reply never reveals what another visitor searched.
-        if not self.cache or not client or state.turns or not state.sources:
+    def replay(
+        self,
+        state: Conversation,
+        question: Optional[str],
+        client: Optional[str],
+        fresh: bool = False,
+    ) -> Optional[list[Event]]:
+        """Replay a stored first answer without admission or provider work.
+
+        `fresh` skips the lookup; the next completed `run` replaces the entry.
+        """
+        if fresh or not self.cache or not _cacheable(state, question, client):
             return None
         profile, state = self._pinned(state)
-        material = {
-            "client": client,
-            "query": state.query,
-            "profile": state.profile,
-            "model": state.model,
-            "protocol": state.protocol,
-            "lang": state.search.lang,
-            "sources": [asdict(s) for s in state.sources],
-            "prompt": ANSWER_PROMPT,
-            "options": profile.options,
-            "max_output_tokens": profile.max_output_tokens,
-        }
-        encoded = json.dumps(material, sort_keys=True, ensure_ascii=False).encode()
-        return hashlib.sha256(encoded).hexdigest()
-
-    def cached(self, state: Conversation, key: Optional[str]) -> Optional[list[Event]]:
-        """Replay a stored first answer without admission or provider work."""
-        if not self.cache or not key:
-            return None
-        answer = self.cache.get(key)
+        answer = self.cache.get(_cache_key(profile, state, client))
         log.debug("Answer cache %s", "hit" if answer else "miss")
         if answer is None:
             return None
-        state = self._pinned(state)[1]
         return [
             _sources_event(state.sources),
             Event("text_delta", {"text": answer}),
-            self._done(replace(state, turns=(Turn(state.query, answer, state.sources),))),
+            self._done(_answered(state, state.query, answer, state.sources)),
         ]
 
     def run(
-        self, state: Conversation, question: Optional[str], key: Optional[str] = None
+        self, state: Conversation, question: Optional[str], client: Optional[str] = None
     ) -> Iterator[Event]:
-        """Generate a turn; a completed answer is stored under `key` when given."""
+        """Generate a turn; a completed first answer is cached for `client`."""
         if len(state.turns) >= self.config.max_turns:
             raise OverviewError("turn_limit", "This conversation is full. Start a new search.")
         if bool(state.turns) != bool(question):
             raise OverviewError("invalid_request", "Run a search before asking a follow-up.")
         profile, state = self._pinned(state)
+        key = (
+            _cache_key(profile, state, client)
+            if self.cache and _cacheable(state, question, client)
+            else None
+        )
         deadline = time.monotonic() + profile.timeout_seconds
         provider = Provider(profile, self.transport)
         current = question or state.query
@@ -142,15 +134,10 @@ class GenerationService:
         answer = "".join(output)
         if not answer.strip():
             raise OverviewError("empty_answer", "The model returned no answer. Try again.")
-        updated = replace(
-            state,
-            sources=sources,
-            turns=(*state.turns, Turn(question=current, answer=answer, sources=sources)),
-        )
         # Store only complete answers; a stopped or failed stream never reaches here.
         if self.cache and key:
             self.cache.put(key, answer)
-        yield self._done(updated)
+        yield self._done(_answered(state, current, answer, sources))
 
     def _pinned(self, state: Conversation) -> tuple[Profile, Conversation]:
         if state.profile not in self.config.profiles:
@@ -228,6 +215,43 @@ class GenerationService:
             )
         messages.append(Message("user", _evidence_message(question, sources)))
         return messages
+
+
+def _cacheable(state: Conversation, question: Optional[str], client: Optional[str]) -> bool:
+    # Only first answers are cached, and only within one browser, so a fast
+    # reply never reveals what another visitor searched.
+    return bool(client and not question and not state.turns and state.sources)
+
+
+def _cache_key(profile: Profile, state: Conversation, client: Optional[str]) -> str:
+    """Key for a pinned first answer; the conversation ID is left out."""
+    material = {
+        "client": client,
+        "query": state.query,
+        "profile": state.profile,
+        "backend": profile.backend,
+        "endpoint": profile.endpoint,
+        "model": state.model,
+        "protocol": state.protocol,
+        "lang": state.search.lang,
+        "sources": [asdict(s) for s in state.sources],
+        "prompt": ANSWER_PROMPT,
+        "options": profile.options,
+        "max_output_tokens": profile.max_output_tokens,
+    }
+    encoded = json.dumps(material, sort_keys=True, ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _answered(
+    state: Conversation, question: str, answer: str, sources: tuple[Source, ...]
+) -> Conversation:
+    """The conversation after a completed turn, whether generated or replayed."""
+    return replace(
+        state,
+        sources=sources,
+        turns=(*state.turns, Turn(question=question, answer=answer, sources=sources)),
+    )
 
 
 def _sources_event(sources: tuple[Source, ...]) -> Event:
