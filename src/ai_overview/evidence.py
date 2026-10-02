@@ -1,8 +1,8 @@
 import html
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, replace
-from html.parser import HTMLParser
 from typing import Any, Optional, Protocol
 from urllib.parse import urlsplit, urlunsplit
 
@@ -19,19 +19,16 @@ def result_field(result: Mapping[str, Any] | SnippetResult, name: str) -> Any:
     return result.get(name) if isinstance(result, Mapping) else getattr(result, name, None)
 
 
-class TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-
-    def handle_data(self, data: str) -> None:
-        self.parts.append(data)
+# Result text is plain at post_search time; only strip highlight markup some engines send.
+HIGHLIGHT_TAG = re.compile(
+    r"</?(?:b|strong|em|i|span)(?:\s+[\w:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'>]+))*\s*/?>",
+    re.IGNORECASE,
+)
 
 
 def plain(value: Any, limit: int = 3000) -> str:
-    parser = TextExtractor()
-    parser.feed(str(value or "")[: limit * 4])
-    return " ".join(html.unescape(" ".join(parser.parts)).split())[:limit]
+    text = HIGHLIGHT_TAG.sub("", str(value or "")[: limit * 4])
+    return " ".join(html.unescape(text).split())[:limit]
 
 
 def safe_url(value: Any) -> Optional[str]:
