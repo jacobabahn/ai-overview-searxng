@@ -1,4 +1,5 @@
 import json
+import random
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -7,9 +8,9 @@ import pytest
 
 from ai_overview.config import Config
 from ai_overview.errors import OverviewError
-from ai_overview.evidence import build_sources, eligible, safe_url
+from ai_overview.evidence import build_sources, eligible, plain, safe_url
 from ai_overview.models import Conversation
-from ai_overview.state import StateSigner, initial_state
+from ai_overview.state import MAX_STATE_BYTES, StateSigner, initial_state
 
 
 @pytest.mark.parametrize(
@@ -61,6 +62,26 @@ def test_evidence_deduplicates_and_bounds_unicode() -> None:
     assert len(sources[0].snippet.encode()) < 1000
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("Use Vec<String> for owned lists", "Use Vec<String> for owned lists"),
+        ("if a<b then c", "if a<b then c"),
+        ("if a<b and c>d", "if a<b and c>d"),
+        ("x &lt;y&gt;", "x <y>"),
+        ("x &amp;lt;y&amp;gt;", "x &lt;y&gt;"),
+        ('<b>Bold</b> and <span class="hl">marked</span>  text', "Bold and marked text"),
+        ("&lt;b&gt;literal&lt;/b&gt;", "<b>literal</b>"),
+    ],
+)
+def test_plain_keeps_literal_text(value: str, expected: str) -> None:
+    assert plain(value) == expected
+
+
+def test_plain_truncates_after_collapsing_whitespace() -> None:
+    assert plain("a  <em>b</em>\n\nc" * 10, 7) == "a b ca "
+
+
 def test_evidence_stops_once_the_budget_is_spent() -> None:
     seen: list[int] = []
 
@@ -109,6 +130,17 @@ def test_state_roundtrip_preserves_source_snapshots() -> None:
     restored: Conversation = signer.loads(signer.dumps(state))
     assert restored.sources[0].snippet == "evidence"
     assert replace(restored, query="other?").session == restored.session
+
+
+def test_signed_token_never_exceeds_load_limit() -> None:
+    signer = StateSigner("s" * 32)
+    rng = random.Random(0)
+    chars = [chr(c) for c in range(0x21, 0x7F) if chr(c) not in '"\\']
+    state = initial_state("".join(rng.choices(chars, k=MAX_STATE_BYTES - 1000)), (), "local")
+    assert len(json.dumps(asdict(state), ensure_ascii=False).encode()) < MAX_STATE_BYTES
+    with pytest.raises(OverviewError) as caught:
+        signer.dumps(state)
+    assert caught.value.code == "context_limit"
 
 
 @pytest.mark.parametrize(

@@ -20,9 +20,14 @@ class StateSigner:
 
     def dumps(self, state: Conversation) -> str:
         data = asdict(state)
+        full = OverviewError("context_limit", "This conversation is full. Start a new search.")
         if len(json.dumps(data, ensure_ascii=False).encode()) > MAX_STATE_BYTES:
-            raise OverviewError("context_limit", "This conversation is full. Start a new search.")
-        return self.serializer.dumps(data)
+            raise full
+        token = self.serializer.dumps(data)
+        # loads() bounds the signed token, which can outgrow poorly compressible JSON.
+        if len(token) > MAX_STATE_BYTES:
+            raise full
+        return token
 
     def loads(self, token: object) -> Conversation:
         if not isinstance(token, str) or not token or len(token) > MAX_STATE_BYTES:
