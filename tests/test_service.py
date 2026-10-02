@@ -1,11 +1,13 @@
 import json
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional, cast
 
 import pytest
 from flask import Flask
+from werkzeug.test import EnvironBuilder
+from werkzeug.wsgi import ClosingIterator
 
 from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
@@ -257,6 +259,41 @@ def test_expired_turn_does_not_start_provider(monkeypatch: pytest.MonkeyPatch) -
         next(stream)
     assert caught.value.code == "timeout"
     assert not transport.calls
+
+
+def test_stream_slots_return_when_body_is_never_read() -> None:
+    service, _, transport = make_service(["Hello [1]"] * 2)
+    app = Flask(__name__)
+    register(app, service)
+    token = service.signer.dumps(
+        initial_state(
+            "q?", build_sources([{"url": "https://a.com", "content": "evidence"}]), "test"
+        )
+    )
+    statuses: list[str] = []
+
+    def start_response(
+        status: str, headers: list[tuple[str, str]], exc_info: Any = None
+    ) -> Callable[[bytes], object]:
+        statuses.append(status)
+        return lambda data: None
+
+    # The test client always reads the first chunk, so drive WSGI like a server that drops early.
+    for _ in range(service.config.max_concurrent + 2):
+        environ = EnvironBuilder(
+            path="/ai-overview/stream", method="POST", json={"token": token}
+        ).get_environ()
+        body = app.wsgi_app(environ, start_response)
+        assert isinstance(body, ClosingIterator)
+        body.close()
+    assert statuses == ["200 OK"] * (service.config.max_concurrent + 2)
+    assert not transport.calls
+    client = app.test_client()
+    for _ in range(2):
+        response = client.post("/ai-overview/stream", json={"token": token})
+        assert b"event: done" in response.data
+        response.close()
+    assert len(transport.calls) == 2
 
 
 def cache_state(url: str = "https://a.example") -> Any:
