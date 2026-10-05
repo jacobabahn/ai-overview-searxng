@@ -66,19 +66,13 @@ def register(
     @bp.post("/stream")
     def stream() -> Response:
         try:
-            _same_origin()
-            request.max_content_length = MAX_STATE_BYTES + 10000
-            if not request.is_json:
-                raise OverviewError("invalid_request", "Send a JSON request.")
-            body = request.get_json(silent=True)
-            if not isinstance(body, dict) or set(body) - {"token", "question", "client", "fresh"}:
-                raise OverviewError("invalid_request", "Invalid overview request.")
+            body = _json_request({"token", "question", "client", "fresh"})
             client = body.get("client")
             fresh = body.get("fresh", False)
             if (
                 client is not None and (not isinstance(client, str) or not 0 < len(client) <= 64)
             ) or type(fresh) is not bool:
-                raise OverviewError("invalid_request", "Invalid overview request.")
+                raise OverviewError("invalid_request", "Invalid request.")
             state = service.signer.loads(body.get("token"))
             question = body.get("question")
             if question is not None:
@@ -150,7 +144,7 @@ def _json_request(allowed: set[str]) -> dict[str, Any]:
     request.max_content_length = MAX_STATE_BYTES + 10000
     body = request.get_json(silent=True) if request.is_json else None
     if not isinstance(body, dict) or set(body) - allowed:
-        raise OverviewError("invalid_request", "Invalid model selection request.")
+        raise OverviewError("invalid_request", "Invalid request.")
     return body
 
 

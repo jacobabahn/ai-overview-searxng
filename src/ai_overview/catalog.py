@@ -10,6 +10,7 @@ from .config import Config, Profile
 from .errors import OverviewError
 from .models import Conversation
 from .routing import go_root, model_protocol
+from .state import new_session
 
 FetchCatalog = Callable[[str, Profile], dict[str, Any]]
 
@@ -112,11 +113,9 @@ class ModelCatalog:
         )
         if choice is None:
             raise OverviewError("invalid_request", "Choose an available model.")
-        import secrets
-
         return replace(
             state,
-            session=secrets.token_hex(16),
+            session=new_session(),
             profile=name,
             model=model,
             protocol=choice.protocol,

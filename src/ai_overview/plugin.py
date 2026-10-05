@@ -35,8 +35,9 @@ class SXNGPlugin(Plugin):
             config = Config.load()
             secret = os.getenv("AI_OVERVIEW_SECRET") or settings["server"]["secret_key"]
             signer = StateSigner(secret, config.token_ttl_seconds)
-            self.service = GenerationService(config, signer, SearXNGTransport(), self.retrieve)
-            register(app, self.service, ModelCatalog(config, SearXNGTransport().get_json))
+            transport = SearXNGTransport()
+            self.service = GenerationService(config, signer, transport, self.retrieve)
+            register(app, self.service, ModelCatalog(config, transport.get_json))
         except (OSError, ValueError) as error:
             self.log.error("AI overview configuration failed (%s)", type(error).__name__)
             return False

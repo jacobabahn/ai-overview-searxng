@@ -60,6 +60,7 @@ def build_sources(
 ) -> tuple[Source, ...]:
     sources: list[Source] = []
     seen = set()
+    used = 2  # The enclosing JSON brackets.
     for result in results:
         url = safe_url(result_field(result, "url"))
         if not url or url in seen:
@@ -74,10 +75,13 @@ def build_sources(
             title=plain(result_field(result, "title"), 300) or urlsplit(url).hostname or url,
             snippet=snippet,
         )
-        while source.snippet and encoded_size([asdict(s) for s in [*sources, source]]) > budget:
+        separator = 1 if sources else 0
+        while source.snippet and used + separator + encoded_size(asdict(source)) > budget:
             source = replace(source, snippet=source.snippet[:-100])
         if not source.snippet:
-            continue
+            # The budget is spent; later results would be trimmed away the same way.
+            break
+        used += separator + encoded_size(asdict(source))
         sources.append(source)
         seen.add(url)
         if len(sources) == max_sources:
@@ -94,6 +98,7 @@ def eligible(
     return (
         isinstance(query, str)
         and query.strip().endswith("?")
+        and bool(query.strip().rstrip("?").strip())
         and len(query) <= 2000
         and page == 1
         and output_format == "html"
