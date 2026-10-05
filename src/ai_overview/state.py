@@ -43,6 +43,10 @@ class StateSigner:
             ) from None
 
 
+def new_session() -> str:
+    return secrets.token_hex(16)
+
+
 def initial_state(
     query: str,
     sources: tuple[Source, ...],
@@ -50,7 +54,7 @@ def initial_state(
     search_options: Optional[SearchOptions] = None,
 ) -> Conversation:
     return Conversation(
-        session=secrets.token_hex(16),
+        session=new_session(),
         profile=profile,
         query=query.strip(),
         sources=sources,

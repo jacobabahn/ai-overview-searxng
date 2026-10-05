@@ -1,5 +1,6 @@
 import json
-from dataclasses import dataclass, replace
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import pytest
@@ -19,6 +20,8 @@ from ai_overview.state import StateSigner, initial_state
         ("what? next", False),
         ("why", False),
         ("", False),
+        ("?", False),
+        (" ?? ", False),
     ],
 )
 def test_activation(query: str, expected: bool) -> None:
@@ -56,6 +59,19 @@ def test_evidence_deduplicates_and_bounds_unicode() -> None:
     assert sources[0].title == "Title"
     assert sources[0].url == "https://example.com/"
     assert len(sources[0].snippet.encode()) < 1000
+
+
+def test_evidence_stops_once_the_budget_is_spent() -> None:
+    seen: list[int] = []
+
+    def results() -> Iterator[dict[str, str]]:
+        for index in range(50):
+            seen.append(index)
+            yield {"url": f"https://example.com/{index}", "content": "x" * 3000}
+
+    sources = build_sources(results(), max_sources=30, budget=4000)
+    assert len(json.dumps([asdict(s) for s in sources], separators=(",", ":"))) <= 4000
+    assert len(seen) == len(sources) + 1
 
 
 def test_typed_searxng_results_without_mapping_methods() -> None:
