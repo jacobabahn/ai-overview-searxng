@@ -3,7 +3,7 @@ import logging
 from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Lock
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
@@ -91,6 +91,12 @@ def register(
             return _error_response(
                 OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
             )
+        lease = Lock()
+
+        def release() -> None:
+            # Runs from the generator and on response close; only the first call frees the slot.
+            if lease.acquire(blocking=False):
+                slots.release()
 
         def generate() -> Iterator[str]:
             try:
@@ -107,9 +113,12 @@ def register(
                     )
                 )
             finally:
-                slots.release()
+                release()
 
-        return _stream_response(generate())
+        response = _stream_response(generate())
+        # A response closed before its body is read never starts generate().
+        response.call_on_close(release)
+        return response
 
     app.register_blueprint(bp)
 
