@@ -37,6 +37,34 @@ Environment mode creates one profile named `default` with the model picker off.
 Use YAML for multiple profiles, discovery, custom headers, or advanced limits.
 The `LLM_*` variable names from AI Answers are not aliases for these settings.
 
+## YAML configuration
+
+Create `overview.yml` in the repository root and mount it alongside the plugin
+in your SearXNG service, without setting `AI_OVERVIEW_BACKEND`:
+
+```yaml
+volumes:
+  - /absolute/path/ai-overview-searxng/overview.yml:/etc/searxng/overview.yml:ro
+```
+
+The minimal equivalent of the README's Ollama setup is:
+
+```yaml
+default_profile: ollama
+profiles:
+  ollama:
+    backend: ollama
+    model: your-installed-model
+    endpoint: http://host.docker.internal:11434/api/chat
+```
+
+Hosted profiles read their backend's usual key variable from the container
+environment; `api_key_env` names a different one. Set `model_picker: true` to
+expose the configured profiles under **Summary settings**. Outside a container,
+the default path is `/etc/searxng/overview.yml`; point `AI_OVERVIEW_CONFIG`
+elsewhere to override it. `overview.yml` and `settings.yml` in the repository
+root are ignored by Git.
+
 ## Backends and budgets
 
 | Backend | Protocol | Endpoint configuration |

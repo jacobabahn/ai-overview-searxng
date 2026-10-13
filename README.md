@@ -2,7 +2,7 @@
 
 Add streaming, source-linked answers above SearXNG search results. End a search
 with `?` to generate a summary from the returned snippets, using a local model
-or a hosted provider. Ordinary search results remain available while it runs.
+or a hosted provider.
 
 ![AI Summary in SearXNG’s dark theme, showing a cited answer to “Why should I use searxng?”, eight sources, and the Show full answer control.](docs/images/ai-summary-dark.png)
 
@@ -12,103 +12,58 @@ or a hosted provider. Ordinary search results remain available while it runs.
 - Fits SearXNG's Simple theme, including dark mode and mobile layouts.
 
 **Early-stage software for personal instances.** Tested with SearXNG
-`2026.9.19-e831fc2a1` and the Simple theme. Other versions and themes are
-unverified. The conversation API supports follow-ups, but the current interface
-hides the follow-up input.
+`2026.9.19-e831fc2a1` and the Simple theme; other versions and themes are
+unverified.
 
 [Provider configuration](docs/providers.md) ·
 [Development and testing](docs/development.md) ·
 [Architecture](docs/ARCHITECTURE.md)
 
-## Try it without a model
+## Install in SearXNG
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Make:
+These steps add the plugin to an existing Docker Compose deployment that uses the
+Simple theme. Clone this repository on the host first; nothing else needs
+installing there.
 
 ```sh
 git clone https://github.com/jacobabahn/ai-overview-searxng.git
-cd ai-overview-searxng
-uv sync --locked
-make demo
 ```
 
-Open <http://127.0.0.1:8765>. The demo uses prerecorded fixture answers; it needs
-no SearXNG instance, API key, or model server.
+### 1. Mount the plugin and choose a model
 
-## Install in SearXNG
-
-These steps assume an existing Docker Compose deployment using the Simple theme
-and SearXNG's class-based plugin API. Keep your existing search configuration.
-Python and uv are needed for the standalone demo and development, not on the
-host for this container installation.
-
-### 1. Configure a model
-
-Clone this repository if you have not already. Choose either environment
-variables for one model or a YAML file for multiple profiles and advanced settings.
-
-**Environment variables — no `overview.yml` needed:** add these to your SearXNG
-service in Docker Compose:
+Merge this into your SearXNG service, replacing the host path and model name:
 
 ```yaml
-environment:
-  AI_OVERVIEW_BACKEND: ollama
-  AI_OVERVIEW_MODEL: your-installed-model
-  AI_OVERVIEW_ENDPOINT: http://host.docker.internal:11434/api/chat
+services:
+  searxng:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      AI_OVERVIEW_BACKEND: ollama
+      AI_OVERVIEW_MODEL: your-installed-model # exact name from `ollama list`
+      AI_OVERVIEW_ENDPOINT: http://host.docker.internal:11434/api/chat
+    volumes:
+      - /absolute/path/ai-overview-searxng/src/ai_overview:/usr/local/searxng/ai_overview:ro
 ```
 
-**YAML configuration:** create `overview.yml` in the repository root. The equivalent
-Ollama configuration is:
+This uses Ollama running on the Docker host. The model server must listen on an
+address the container can reach; `localhost` inside the container is the
+container itself.
 
-```yaml
-default_profile: ollama
-profiles:
-  ollama:
-    backend: ollama
-    model: your-installed-model
-    endpoint: http://host.docker.internal:11434/api/chat
-```
+To use something else:
 
-Replace `your-installed-model` with the exact name from `ollama list`. The model
-server must listen on an address reachable from the container; container
-`localhost` refers to the container itself.
+- **Hosted provider:** set `AI_OVERVIEW_BACKEND` to `openai`, `gemini`,
+  `openrouter`, or `opencode_go`, remove `AI_OVERVIEW_ENDPOINT`, and add
+  `AI_OVERVIEW_API_KEY`. The key stays on the server.
+- **OpenAI-compatible local server:** set the backend to `local` and the endpoint
+  to its full `/v1/chat/completions` URL.
+- **Several models, a model picker, or tuned limits:** mount an `overview.yml`
+  instead of setting these variables.
 
-For OpenAI-compatible local servers, OpenAI, Gemini, OpenRouter, or OpenCode Go,
-see [provider configuration](docs/providers.md) and
-[the complete configuration example](examples/overview.yml). Model IDs must be
-available in your installation or provider account. There is no automatic fallback
-to another provider.
+[Provider configuration](docs/providers.md) covers every variable and the YAML
+format. There is no automatic fallback to another provider.
 
-### 2. Mount the plugin and configuration
-
-Add the following to your existing SearXNG service, replacing the host paths:
-
-```yaml
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-volumes:
-  - /absolute/path/ai-overview-searxng/src/ai_overview:/usr/local/searxng/ai_overview:ro
-```
-
-If you chose YAML configuration, also add this volume:
-
-```yaml
-  - /absolute/path/ai-overview-searxng/overview.yml:/etc/searxng/overview.yml:ro
-```
-
-For a hosted provider, also pass the API key through the container environment
-using `AI_OVERVIEW_API_KEY` in environment mode, or the provider's standard
-variable such as `OPENAI_API_KEY`. YAML profiles can choose a variable with
-`api_key_env`.
-Credentials stay on the server. Local profiles need no key unless their server
-requires one.
-
-[compose.env.example.yml](compose.env.example.yml) shows the environment-only
-setup; [compose.example.yml](compose.example.yml) shows the YAML setup. Both
-expect your complete SearXNG `settings.yml` in the repository root. Only the YAML
-setup needs `overview.yml`; both private paths are ignored by Git. Pin your
-SearXNG image version or digest.
-
-### 3. Enable the plugin
+### 2. Enable the plugin
 
 Merge these entries into your SearXNG `settings.yml`, preserving any existing
 plugins and outgoing settings:
@@ -124,67 +79,69 @@ outgoing:
       retries: 0
 ```
 
-The dedicated network permits local HTTP model endpoints and inherits SearXNG's
-proxy and TLS settings. Set `enable_http: false` if all model endpoints use HTTPS.
-Keep a strong random `server.secret_key` of at least 24 characters. If you use
-another AI-answer plugin, disable it to avoid duplicate panels.
+`enable_http` lets the plugin reach local HTTP model endpoints; set it to `false`
+if every endpoint uses HTTPS. `server.secret_key` must be a strong random value
+of at least 24 characters. Disable any other AI-answer plugin to avoid duplicate
+panels.
 
-### 4. Restart and search
-
-Recreate your SearXNG service to apply the mounts and environment:
+### 3. Restart and search
 
 ```sh
 docker compose up -d --force-recreate searxng
 ```
 
-Run this from your deployment directory; substitute your service name if needed.
-Search the first page of General results for `why is the sky blue?`. If saved
-browser preferences override the default, enable **AI overview** in Preferences.
-With YAML configuration, set `model_picker: true` to expose configured profiles under
-**Summary settings**. Restart SearXNG after changing configuration.
+Search for `why is the sky blue?`. If no summary appears, enable **AI overview**
+in Preferences, since saved browser preferences can override the default, then
+see [Troubleshooting](#troubleshooting). Restart SearXNG after any configuration
+change.
 
-For non-container installations, install this repository into SearXNG's Python
-environment with `pip install /path/to/ai-overview-searxng`, then apply the same
-plugin settings. The default config path is `/etc/searxng/overview.yml`; override
-it with `AI_OVERVIEW_CONFIG` in the SearXNG process environment. Environment-only
-configuration works there too.
+[compose.env.example.yml](compose.env.example.yml) and
+[compose.example.yml](compose.example.yml) are complete reference deployments for
+the environment and YAML setups. Pin your SearXNG image version or digest.
 
-Configuration precedence: an explicit `AI_OVERVIEW_CONFIG` path wins; otherwise
-`AI_OVERVIEW_BACKEND` selects environment mode; otherwise the default YAML path
-is loaded. Sources are not merged, and invalid configuration does not fall back.
+### Without Docker
+
+Install this repository into SearXNG's Python environment with
+`pip install /path/to/ai-overview-searxng`, set the same environment variables
+for the SearXNG process, and apply step 2.
+
+## Try it without SearXNG or a model
+
+To see the interface before installing anything into SearXNG, run the standalone
+demo from the repository root. It requires Python 3.11+,
+[uv](https://docs.astral.sh/uv/), and Make:
+
+```sh
+uv sync --locked
+make demo
+```
+
+Open <http://127.0.0.1:8765>. The demo uses prerecorded fixture answers; it needs
+no SearXNG instance, API key, or model server.
 
 ## Privacy and limitations
 
-The selected provider receives your question and selected search snippets. Hosted
-providers receive that data even when SearXNG itself is self-hosted. Local model
-profiles keep generation on the configured server. Search-engine requests still
-follow your SearXNG settings.
+The selected provider receives your question and the search snippets chosen as
+sources. Hosted providers receive that data even when SearXNG itself is
+self-hosted; local models keep generation on the configured server.
+Search-engine requests still follow your SearXNG settings.
 
-- Generation starts only for HTML, first-page, General-category searches ending
-  in an ASCII `?`, after trimming whitespace.
-- Answers use bounded snippets, not full pages. Citations identify supplied
-  sources; they do not prove that an answer is correct or supported.
-- Model HTML is displayed as text. Markdown links display their labels; clickable
-  citations resolve only to the supplied sources.
-- Signed state is readable and held in page memory. Reloading starts fresh.
-  State expires after 30 minutes by default and can be replayed until expiry.
-  Local storage holds only the selected model preference and a random ID
-  that scopes the answer cache to your browser.
-- Completed first answers are cached in each worker's memory for 30 minutes
-  (256 entries by default), so reloading, going back, or repeating a search in
-  the same browser does not pay for a new generation. Regenerate always asks the
-  model again. Set `answer_cache_entries: 0` to disable the cache.
-- Defaults allow 8 sources, 12,000 bytes of evidence, and 2 simultaneous
-  generations **per worker**. There are no shared admission or per-user spending
-  controls for public instances.
-- Stop closes the browser request. Upstream cancellation depends on server
-  disconnect detection and provider behavior and may take until a timeout.
-- Automated checks use provider fixtures. Live compatibility with every backend
-  and model, and systematic answer-quality evaluation, remain unverified.
+- A summary is generated only for first-page, General-category searches that end
+  in `?`.
+- Answers are written from search snippets, not full pages. A citation shows
+  which source the model was given; it does not prove the claim is correct.
+- Completed answers are cached in server memory for 30 minutes per browser, so
+  reloading or repeating a search does not pay for a new generation. Regenerate
+  always asks the model again.
+- The browser's local storage holds only the selected model and a random ID that
+  scopes the cache to that browser.
+- Each worker runs at most 2 generations at once. There are no per-user rate or
+  spending limits, so a public instance can run up provider costs.
+- Compatibility is tested against recorded provider responses, not live against
+  every backend and model.
 
-The retained follow-up API also sends conversation context to the provider and
-can perform one additional search per turn. Its budgets and state handling are
-covered in [Architecture](docs/ARCHITECTURE.md).
+[Architecture](docs/ARCHITECTURE.md) describes state handling, budgets, and the
+follow-up API, which the current interface does not expose.
 
 ## Troubleshooting
 
