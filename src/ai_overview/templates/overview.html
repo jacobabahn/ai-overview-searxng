@@ -1,4 +1,5 @@
 <link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='overview.css') }}">
+<link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='chat-mode.css') }}">
 <section class="ai-overview" aria-label="AI Summary" data-expanded="false" data-loading="true" data-token="{{ token }}"
          data-endpoint="{{ url_for('ai_overview.stream') }}"
          data-models-endpoint="{{ url_for('ai_overview.models') }}"

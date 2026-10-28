@@ -1,4 +1,5 @@
 import {copyText} from "./clipboard.js";
+import {chatMode} from "./chat-mode.js";
 import {Conversation} from "./conversation.js";
 import {renderMarkdown} from "./markdown.js";
 export {events} from "./conversation.js";
@@ -131,7 +132,7 @@ function mount(panel) {
     const answer = turns.querySelector(".ai-answer");
     const clipped = answer && (answer.querySelector(".ai-code-block") || answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1);
     const hasConversation = turns.childElementCount > 1;
-    moreRow.hidden = !clipped && !hasConversation;
+    moreRow.hidden = panel.dataset.chat === "true" || (!clipped && !hasConversation);
     more.setAttribute("aria-expanded", String(expanded));
     more.querySelector("span").textContent = expanded ? "Show less" : hasConversation ? "Show conversation" : "Show full answer";
     // Offer follow-ups only once the whole conversation is visible.
@@ -216,6 +217,7 @@ function mount(panel) {
     endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null},
     onEvent: renderEvent,
   });
+  const chat = chatMode(panel, {expand, focusComposer: () => { if (!form.hidden) input.focus({preventScroll: true}); }});
 
   function updateControls(state) {
     panel.dataset.loading = String(state.phase === "streaming");
@@ -380,6 +382,7 @@ function mount(panel) {
   }
 
   function renderEvent(event, state) {
+    chat.update(state);
     updateControls(state);
     if (event.name === "models_loading") modelStatus.textContent = "Loading models…";
     if (event.name === "models_error") modelStatus.textContent = event.data.message;
