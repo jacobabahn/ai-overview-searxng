@@ -1,0 +1,113 @@
+/* Chat mode (chat-mode.js). The Chat entry reuses SearXNG's category button
+   styles; these rules only cover what the host theme cannot know about. */
+#ai-chat-tab[hidden] { display: none; }
+#ai-chat-tab:focus-visible { outline: 2px solid var(--color-result-link-font, #3050ff); outline-offset: 2px; }
+
+/* Everything that belongs to the result list steps aside while chatting. Edit
+   this list to keep more of the page, such as the language/time/SafeSearch row
+   (.search_filters). Leaving chat mode restores it untouched. */
+html[data-ai-chat] :is(#urls, #sidebar, #corrections, #pagination, #backToTop, .search_filters),
+html[data-ai-chat] #answers > .answer:not(:has(.ai-overview)) { display: none !important; }
+
+/* The summary takes over the space the results and sidebar shared. */
+html[data-ai-chat] #main_results div#results { grid-template: "answers" auto / minmax(0, 1fr); }
+@media screen and (min-width: 50em) {
+  html[data-ai-chat] #main_results div#results { margin-inline: 2rem; }
+}
+html[data-ai-chat] #answers {
+  box-sizing: border-box; width: 100%; max-inline-size: 50rem;
+  margin-inline: auto; margin-block-end: 2rem;
+}
+html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block-start: 0; }
+
+.ai-overview[data-chat="true"] {
+  --ai-chat-surface: var(--color-answer-background, var(--ai-bg));
+  --ai-chat-question: 1.375rem;
+  --ai-chat-follow-up: 1.125rem;
+  --ai-chat-turn-gap: 2rem;
+}
+.ai-overview[data-chat="true"] .ai-collapse,
+.ai-overview[data-chat="true"] .ai-more-row { display: none; }
+
+/* The search, echoed as the first question, titles the thread; follow-ups
+   continue it at a quieter size, with space rather than rules between turns. */
+.ai-overview[data-chat="true"] :is(.ai-question, .ai-chat-query) {
+  font: inherit; font-size: var(--ai-chat-question); font-weight: 600;
+  line-height: 1.3; letter-spacing: -0.01em; color: var(--ai-text);
+  margin: 0 0 0.75rem; padding: 0; border: 0;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ai-overview .ai-chat-query { display: none; }
+.ai-overview[data-chat="true"] .ai-chat-query { display: block; }
+.ai-overview[data-chat="true"] .ai-question { font-size: var(--ai-chat-follow-up); margin-block-end: 0.5rem; }
+.ai-overview[data-chat="true"] .ai-turns > article + article { padding-block-start: var(--ai-chat-turn-gap); }
+.ai-overview[data-chat="true"] .ai-turns { margin-block-start: 1rem; }
+
+/* The composer stays reachable at the bottom of the viewport in long threads. */
+.ai-overview[data-chat="true"] .ai-follow-up {
+  position: sticky; inset-block-end: 0.75rem; z-index: 1; margin-block-start: 2rem;
+  background: var(--ai-chat-surface);
+  box-shadow: 0 0 0 0.75rem var(--ai-chat-surface);
+}
+
+/* Wide screens: an annotated page. The answer keeps a reading measure and each
+   turn's sources sit open in the margin beside the claims they support. */
+@media screen and (min-width: 64rem) {
+  html[data-ai-chat] #answers,
+  html[data-ai-chat] #answers:has(.ai-overview) > .answer {
+    max-inline-size: 68rem; background: transparent; padding: 0;
+  }
+  .ai-overview[data-chat="true"] {
+    --ai-chat-surface: var(--color-base-background, var(--ai-bg));
+    --ai-chat-question: 1.625rem;
+    --ai-chat-follow-up: 1.25rem;
+    --ai-chat-turn-gap: 2.5rem;
+  }
+  .ai-overview[data-chat="true"] .ai-overview-header { padding-block: 0.5rem; }
+  .ai-overview[data-chat="true"] :is(.ai-content, .ai-collapsed-preview) { margin-inline: 0; }
+  .ai-overview[data-chat="true"] .ai-turns > article {
+    display: grid; grid-auto-flow: row dense; align-items: start;
+    grid-template-columns: minmax(0, 40rem) minmax(15rem, 1fr); column-gap: 3.5rem;
+  }
+  .ai-overview[data-chat="true"] .ai-turns > article > * { grid-column: 1; }
+  /* One margin rule runs the length of the thread, bridging the space between turns. */
+  .ai-overview[data-chat="true"] .ai-turns > article::before {
+    content: ""; grid-column: 2; grid-row: 1 / span 99;
+    align-self: stretch; border-inline-start: 1px solid var(--ai-border);
+  }
+  .ai-overview[data-chat="true"] .ai-turns > article + article::before { margin-block-start: calc(-1 * var(--ai-chat-turn-gap)); }
+  .ai-overview[data-chat="true"] .ai-turns > article > .ai-sources {
+    grid-column: 2; grid-row: 1 / span 99;
+    position: sticky; inset-block-start: 1rem;
+    margin: 0; padding-inline-start: 1.25rem;
+    font-size: 0.8125rem;
+  }
+  .ai-overview[data-chat="true"] .ai-sources summary { padding-block: 0.15rem 0.5rem; color: var(--ai-muted); }
+  .ai-overview[data-chat="true"] .ai-sources summary span { margin-inline-start: 0.5rem; }
+  .ai-overview[data-chat="true"] .ai-sources .ai-provenance { margin-block: 0 0.5rem; font-size: inherit; }
+  /* Said once, beside the first answer. */
+  .ai-overview[data-chat="true"] .ai-turns > article + article .ai-provenance { display: none; }
+  .ai-overview[data-chat="true"] .ai-sources small { font-size: 0.75rem; }
+  .ai-overview[data-chat="true"] .ai-sources ol { margin: 0; padding-inline-start: 1.25rem; }
+  .ai-overview[data-chat="true"] .ai-sources li {
+    margin: 0 0 0.25rem -0.5rem; padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    border-radius: 0.4rem; line-height: 1.45;
+  }
+  .ai-overview[data-chat="true"] .ai-sources li a { font-weight: 600; text-decoration: none; }
+  .ai-overview[data-chat="true"] .ai-sources li a:hover { text-decoration: underline; }
+  .ai-overview[data-chat="true"] .ai-sources li p {
+    margin: 0.25rem 0 0; color: var(--ai-muted);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* A citation being read, pointed at, or focused lights up its margin note. */
+  .ai-overview[data-chat="true"] .ai-sources li:is(.ai-chat-cited, :focus) { background: var(--ai-tint); }
+  .ai-overview[data-chat="true"] .ai-sources li:is(.ai-chat-cited, :focus) p { -webkit-line-clamp: unset; }
+  .ai-overview[data-chat="true"] .ai-answer a[data-source-id].ai-chat-cited {
+    color: var(--ai-bg); background: var(--ai-link);
+  }
+  .ai-overview[data-chat="true"] .ai-follow-up { max-inline-size: 40rem; box-sizing: border-box; }
+}
+@media screen and (min-width: 64rem) and (prefers-reduced-motion: no-preference) {
+  .ai-overview[data-chat="true"] .ai-sources li,
+  .ai-overview[data-chat="true"] .ai-answer a[data-source-id] { transition: background-color 120ms ease-out, color 120ms ease-out; }
+}

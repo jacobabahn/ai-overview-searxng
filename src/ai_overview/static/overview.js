@@ -1,4 +1,5 @@
 import {copyText} from "./clipboard.js";
+import {chatMode} from "./chat-mode.js";
 import {Conversation} from "./conversation.js";
 import {renderMarkdown} from "./markdown.js";
 export {events} from "./conversation.js";
@@ -39,14 +40,14 @@ export function renderCitations(element, text, sources) {
   element.replaceChildren(fragment);
 }
 
-function sourceList(sources) {
+function sourceList(sources, repeated = false) {
   sources = sources.filter(source => validURL(source.url));
   const details = document.createElement("details");
   details.className = "ai-sources";
   const summary = document.createElement("summary");
   summary.textContent = `${sources.length} ${sources.length === 1 ? "source" : "sources"}`;
   const domains = document.createElement("span");
-  domains.textContent = [...new Set(sources.map(s => new URL(s.url).hostname.replace(/^www\./, "")))].slice(0, 2).join(", ");
+  domains.textContent = repeated ? "Same as above" : [...new Set(sources.map(s => new URL(s.url).hostname.replace(/^www\./, "")))].slice(0, 2).join(", ");
   summary.append(domains);
   const list = document.createElement("ol");
   for (const source of sources) {
@@ -73,6 +74,11 @@ function sourceList(sources) {
   return details;
 }
 
+function sameSources(sources, previous) {
+  return Boolean(previous) && sources.length === previous.length &&
+    sources.every((source, index) => source.id === previous[index].id && source.url === previous[index].url);
+}
+
 function mount(panel) {
   if (panel.dataset.mounted) return;
   panel.dataset.mounted = "true";
@@ -85,8 +91,9 @@ function mount(panel) {
   const stop = panel.querySelector(".ai-stop");
   const retry = panel.querySelector(".ai-retry");
   const cancelWait = panel.querySelector(".ai-cancel-wait");
+  const actions = panel.querySelector(".ai-actions");
   const form = panel.querySelector(".ai-follow-up");
-  const input = form.querySelector("input");
+  const input = form.querySelector("textarea");
   const submit = form.querySelector("button");
   const collapse = panel.querySelector(".ai-collapse");
   const more = panel.querySelector(".ai-more");
@@ -125,11 +132,13 @@ function mount(panel) {
     const answer = turns.querySelector(".ai-answer");
     const clipped = answer && (answer.querySelector(".ai-code-block") || answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1);
     const hasConversation = turns.childElementCount > 1;
-    moreRow.hidden = !clipped && !hasConversation;
+    moreRow.hidden = panel.dataset.chat === "true" || (!clipped && !hasConversation);
     more.setAttribute("aria-expanded", String(expanded));
     more.querySelector("span").textContent = expanded ? "Show less" : hasConversation ? "Show conversation" : "Show full answer";
-    // Follow-up entry is temporarily hidden; keep the conversation support intact.
-    form.hidden = true;
+    // Offer follow-ups only once the whole conversation is visible.
+    form.hidden = !conversation.state.canFollowUp || (!expanded && !moreRow.hidden);
+    copy.setAttribute("aria-label", hasConversation ? "Copy conversation" : "Copy answer");
+    copy.title = copy.getAttribute("aria-label");
   }
   new ResizeObserver(() => {
     cancelDisclosureAnimation();
@@ -200,6 +209,7 @@ function mount(panel) {
   const modelStatus = panel.querySelector(".ai-model-status");
   const selectionKey = "searxng-ai-overview-model";
   let activeTurn;
+  let previousSources = null;
   const conversation = new Conversation({
     token: initialToken,
     client: cacheClient(),
@@ -207,6 +217,7 @@ function mount(panel) {
     endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null},
     onEvent: renderEvent,
   });
+  const chat = chatMode(panel, {expand, focusComposer: () => { if (!form.hidden) input.focus({preventScroll: true}); }});
 
   function updateControls(state) {
     panel.dataset.loading = String(state.phase === "streaming");
@@ -227,8 +238,7 @@ function mount(panel) {
         else retry.focus();
       }
     }
-    input.disabled = state.busy;
-    submit.disabled = state.busy;
+    updateSend(state);
     regenerate.disabled = state.busy;
     panel.querySelector(".ai-settings-busy").hidden = !state.busy;
     panel.querySelector(".ai-settings-busy").textContent = state.phase === "selecting"
@@ -288,13 +298,44 @@ function mount(panel) {
   cancelWait.addEventListener("click", () => conversation.stop());
   window.addEventListener("pagehide", () => conversation.stop());
   retry.addEventListener("click", () => conversation.retry());
+  // While an answer streams, the composer stays editable and its button stops generation.
+  function updateSend(state = conversation.state) {
+    const stopping = state.phase === "streaming" || state.phase === "waiting";
+    form.dataset.busy = String(stopping);
+    const label = stopping ? stop.getAttribute("aria-label") : "Ask";
+    submit.setAttribute("aria-label", label);
+    submit.title = label;
+    submit.disabled = !stopping && (state.busy || !input.value.trim());
+  }
+  input.addEventListener("input", () => updateSend());
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    if (!conversation.state.busy) form.requestSubmit();
+  });
+  // A plain button keeps the host theme's submit-button styles off the composer.
+  submit.addEventListener("click", () => {
+    if (form.dataset.busy === "true") conversation.stop();
+    else form.requestSubmit();
+  });
   form.addEventListener("submit", event => {
     event.preventDefault();
-    if (input.value.trim()) conversation.run(input.value.trim());
+    const question = input.value.trim();
+    if (!question || conversation.state.busy) return;
+    input.value = "";
+    conversation.run(question);
   });
+
+  // Follow-ups dock the status and Retry under their own answer; this restores
+  // the panel-level placement used by the first answer.
+  function undock() {
+    turns.before(status);
+    turns.after(actions);
+  }
 
   function beginTurn(question) {
     cancelDisclosureAnimation();
+    undock();
     failedTurn?.remove();
     failedTurn = null;
     if (!question && !turns.childElementCount) {
@@ -305,7 +346,7 @@ function mount(panel) {
     if (question) expand(true);
     copyStatus.textContent = "";
     status.hidden = false;
-    status.textContent = "Reading search results…";
+    status.textContent = question ? "Preparing follow-up…" : "Reading search results…";
     const turn = document.createElement("article");
     if (question) {
       const heading = document.createElement("h3");
@@ -323,6 +364,8 @@ function mount(panel) {
     turnStatus.className = "ai-turn-status";
     turnStatus.hidden = true;
     turn.append(answer, turnStatus);
+    // Follow-up progress and errors belong to their own turn, not the panel top.
+    if (question) turn.append(status, actions);
     answer.addEventListener("click", event => {
       const link = event.target.closest("a[data-source-id]");
       if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -335,9 +378,11 @@ function mount(panel) {
     });
     turns.append(turn);
     activeTurn = {turn, answer, turnStatus, text: "", sources: [], question};
+    if (question) turn.scrollIntoView({block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth"});
   }
 
   function renderEvent(event, state) {
+    chat.update(state);
     updateControls(state);
     if (event.name === "models_loading") modelStatus.textContent = "Loading models…";
     if (event.name === "models_error") modelStatus.textContent = event.data.message;
@@ -355,6 +400,8 @@ function mount(panel) {
       updateControls(state);
     }
     if (event.name === "reset") {
+      undock();
+      previousSources = null;
       turns.replaceChildren();
       activeTurn = failedTurn = null;
       input.value = "";
@@ -380,7 +427,7 @@ function mount(panel) {
     }
     if (event.name === "sources") {
       activeTurn.sources = event.data.sources;
-      const details = sourceList(activeTurn.sources);
+      const details = sourceList(activeTurn.sources, Boolean(activeTurn.question) && sameSources(activeTurn.sources, previousSources));
       if (details.querySelector("li")) activeTurn.turn.append(details);
     }
     if (event.name === "text_delta") {
@@ -396,16 +443,23 @@ function mount(panel) {
     if (event.name === "turn_done") {
       renderMarkdown(activeTurn.answer, activeTurn.text, activeTurn.sources, renderCitations);
       status.textContent = state.canFollowUp ? "" : "Start a new search to continue.";
+      if (!state.canFollowUp) turns.after(status);
       status.hidden = state.canFollowUp;
-      input.value = "";
+      previousSources = activeTurn.sources;
     }
     if (event.name === "turn_error") {
       status.hidden = false;
       status.textContent = event.data.message;
       if (!activeTurn.text) preview.textContent = status.textContent;
       activeTurn.turnStatus.textContent = activeTurn.text ? "Incomplete answer" : event.data.message;
-      activeTurn.turnStatus.hidden = !activeTurn.text;
+      // A follow-up's docked status already sits under its partial answer.
+      activeTurn.turnStatus.hidden = !activeTurn.text || Boolean(activeTurn.question);
       failedTurn = activeTurn.turn;
+      // Let a follow-up that produced nothing be edited and asked again.
+      if (activeTurn.question && !activeTurn.text && !input.value.trim()) {
+        input.value = activeTurn.question;
+        updateSend(state);
+      }
     }
     if (event.name === "state" && !state.busy && activeTurn) {
       updateDisclosure();

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import httpx
-from playwright.sync_api import Route, expect, sync_playwright
+from playwright.sync_api import Page, Request, Route, expect, sync_playwright
 
 
 def main() -> None:
@@ -43,7 +43,7 @@ def main() -> None:
         expect(panel.locator(".ai-provenance")).to_have_text("Based on search snippets")
         expect(panel.locator(".ai-provenance")).to_be_hidden()
         expect(panel.locator(".ai-more")).to_be_hidden()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         panel.get_by_role("button", name="Copy answer").focus()
         page.keyboard.press("Escape")
         expect(panel.get_by_role("button", name="Copy answer")).to_be_focused()
@@ -59,14 +59,17 @@ def main() -> None:
         expect(panel.locator(".ai-sources li p").first).not_to_be_empty()
         panel.locator(".ai-sources summary").first.click()
         first_href = panel.locator(".ai-answer a").first.get_attribute("href")
-        # Exercise retained conversation support without exposing the hidden input.
-        panel.locator(".ai-follow-up").evaluate("""form => {
-          form.querySelector('input').value = 'Why is sunset different?';
-          form.requestSubmit();
-        }""")
+        composer = panel.get_by_role("textbox", name="Ask a follow-up")
+        expect(panel.get_by_role("button", name="Ask", exact=True)).to_be_disabled()
+        composer.fill("Why is sunset different?")
+        composer.press("Enter")
+        expect(composer).to_have_value("")
+        expect(panel.locator(".ai-question")).to_have_text("Why is sunset different?")
         expect(panel.locator(".ai-answer")).to_have_count(2)
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
+        expect(composer).to_be_focused()
+        expect(panel.get_by_role("button", name="Copy conversation")).to_be_enabled()
         assert panel.locator(".ai-answer a").first.get_attribute("href") == first_href
         panel.get_by_role("button", name="Show less", exact=True).click()
         expect(panel.locator(".ai-turns > article").nth(1)).to_be_hidden()
@@ -139,7 +142,7 @@ def main() -> None:
         assert body.get("fresh") is True and body.get("client") == client
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         expect(panel.locator(".ai-more")).to_be_hidden()
 
         # A failed model selection keeps the existing answer and reports the error.
@@ -234,12 +237,14 @@ def main() -> None:
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-answer")).to_have_text("Selected model answer")
         expect(panel.locator(".ai-more")).to_be_hidden()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         with page.expect_request(lambda request: request.url.endswith("/stream")):
-            panel.locator(".ai-follow-up").evaluate("""form => {
-              form.querySelector('input').value = 'Why?';
-              form.requestSubmit();
-            }""")
+            panel.get_by_role("textbox", name="Ask a follow-up").fill("Why?")
+            panel.get_by_role("button", name="Ask", exact=True).click()
+        # While the follow-up streams, the composer's button stops it.
+        expect(
+            panel.locator(".ai-follow-up").get_by_role("button", name="Stop generating")
+        ).to_be_visible()
         assert len(pending_generation) == 1
         followup = pending_generation.pop()
         assert followup.request.post_data_json == {
@@ -306,7 +311,7 @@ def main() -> None:
         assert abs(dimensions["topBefore"] - dimensions["topAfter"]) < 1
         page.screenshot(path=str(output / "overview-expanding.png"), full_page=True)
         panel.locator(".ai-turns").evaluate("el => el.getAnimations()[0].finish()")
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         assert answer.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
         # Rapid reversal leaves one animation and settles at the intended size.
         panel.evaluate("""panel => {
@@ -402,11 +407,127 @@ def main() -> None:
             assert geometry["radii"] == ["10px", "10px"]
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             page.screenshot(path=str(output / f"overview-stacked-{scheme}.png"), full_page=True)
+        check_chat_mode(page, output)
         assert not errors, errors
         browser.close()
     print(
-        "Browser checks passed: generation, citations, fresh-search follow-up, mobile, collapse, XSS, activation, empty/error states, cancellation."
+        "Browser checks passed: generation, citations, fresh-search follow-up, chat mode, mobile, collapse, XSS, activation, empty/error states, cancellation."
     )
+
+
+def check_chat_mode(page: Page, output: Path) -> None:
+    """The Chat category swaps results for the conversation and back, in page memory."""
+    page.unroute("**/ai-overview/stream")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.emulate_media(color_scheme="light", reduced_motion="reduce")
+    tab = page.locator("#ai-chat-tab")
+    general = page.locator('#categories_container button[name="category_general"]')
+    panel = page.locator(".ai-overview")
+    composer = panel.get_by_role("textbox", name="Ask a follow-up")
+    results = page.locator("#urls")
+    page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
+    expect(tab).to_be_visible(timeout=20000)
+    expect(tab).to_have_attribute("type", "button")
+    expect(tab).to_have_attribute("aria-pressed", "false")
+    expect(tab.locator(".category_name")).to_have_text("chat")
+    expect(page.locator("#categories_container .category_button")).to_have_count(2)
+    page.evaluate("window.chatModeMarker = true")
+    searches: list[str] = []
+
+    def record_search(request: Request) -> None:
+        if "/search" in request.url:
+            searches.append(request.url)
+
+    page.on("request", record_search)
+    url = page.url
+    page.evaluate("window.scrollTo(0, 120)")
+    scroll = page.evaluate("window.scrollY")
+
+    def expect_chat() -> None:
+        expect(tab).to_have_attribute("aria-pressed", "true")
+        expect(tab).to_have_class("category category_button selected")
+        expect(general).not_to_have_class("selected")
+        for hidden in ["#urls", "#sidebar", ".search_filters"]:
+            expect(page.locator(hidden)).to_be_hidden()
+        expect(panel.locator(".ai-more-row")).to_be_hidden()
+        expect(panel.locator(".ai-collapse")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
+
+    def expect_results() -> None:
+        expect(tab).to_have_attribute("aria-pressed", "false")
+        expect(general).to_have_class("category category_button selected")
+        expect(results).to_be_visible()
+        expect(results.locator(".result")).to_have_count(2)
+        expect(page.locator(".search_filters")).to_be_visible()
+        assert page.url == url and page.evaluate("window.chatModeMarker") is True
+
+    tab.click()
+    expect_chat()
+    expect(composer).to_be_focused()
+    # Wide screens annotate the thread: the search becomes its first question and
+    # each turn's sources sit open beside the answer, lit by the citation in use.
+    expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
+    expect(panel.locator(".ai-sources").first).to_have_attribute("open", "")
+    panel.locator('.ai-answer a[data-source-id="1"]').first.hover()
+    expect(panel.locator('.ai-sources li[data-source-id="1"]').first).to_have_class("ai-chat-cited")
+    page.screenshot(path=str(output / "overview-chat-desktop.png"), full_page=True)
+    page.emulate_media(color_scheme="dark")
+    page.screenshot(path=str(output / "overview-chat-desktop-dark.png"), full_page=True)
+    page.emulate_media(color_scheme="light")
+    page.keyboard.press("Escape")
+    expect_results()
+    assert page.evaluate("window.scrollY") == scroll
+    expect(panel.locator(".ai-chat-query")).to_have_count(0)
+    expect(panel.locator(".ai-sources").first).not_to_have_attribute("open", "")
+    expect(panel.locator(".ai-turns > article")).to_have_count(1)
+
+    # A follow-up asked in chat mode survives the return to results.
+    tab.click()
+    composer.fill("Why is sunset different?")
+    composer.press("Enter")
+    expect(panel.locator(".ai-answer")).to_have_count(2)
+    expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+    expect(composer).to_be_focused()
+    general.click()
+    expect_results()
+    expect(panel.locator(".ai-turns > article")).to_have_count(2)
+    expect(panel.locator(".ai-turns > article").nth(1)).to_be_visible()
+    # A non-chat history entry remains only for the page itself.
+    assert page.evaluate("history.state?.aiOverviewChat") in (None, False)
+
+    # Back leaves chat mode instead of the page; Forward returns to it.
+    tab.click()
+    expect_chat()
+    page.go_back()
+    expect_results()
+    page.go_forward()
+    expect_chat()
+    page.go_back()
+    expect_results()
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    tab.scroll_into_view_if_needed()
+    tab.click()
+    expect_chat()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=str(output / "overview-chat-mobile.png"), full_page=True)
+    page.emulate_media(color_scheme="dark")
+    page.screenshot(path=str(output / "overview-chat-mobile-dark.png"), full_page=True)
+    page.emulate_media(color_scheme="light")
+    tab.focus()
+    page.keyboard.press("Escape")
+    expect_results()
+    assert not searches, searches
+    page.remove_listener("request", record_search)
+    page.reload()
+    expect(tab).to_be_visible(timeout=20000)
+    expect(tab).to_have_attribute("aria-pressed", "false")
+    expect(results).to_be_visible()
+    # Not offered while a first answer streams.
+    page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
+    expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
+    expect(tab).to_be_hidden()
+    page.get_by_role("button", name="Stop generating", exact=True).click()
 
 
 if __name__ == "__main__":
