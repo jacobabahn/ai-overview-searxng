@@ -55,8 +55,7 @@ reproduction steps. Remove credentials, signed conversation state, and private
 search content from logs and screenshots.
 
 See [Architecture](ARCHITECTURE.md) for implementation boundaries and the
-streaming and state contracts. Follow-up integration checks exercise the retained
-conversation API programmatically; the shipped interface hides the input.
+streaming and state contracts.
 
 ## Markdown rendering
 

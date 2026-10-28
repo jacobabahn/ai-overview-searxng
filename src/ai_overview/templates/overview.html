@@ -35,7 +35,7 @@
     </div>
     {% endif %}
     <div class="ai-settings-footer">
-      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary.</p>
+      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary and any follow-ups.</p>
       <button type="button" class="ai-regenerate" aria-describedby="ai-restart-help">Regenerate overview</button>
       {% if model_picker %}
       <button type="button" class="ai-apply-model" aria-describedby="ai-restart-help" disabled hidden>Use model and restart</button>
@@ -47,7 +47,6 @@
   <div class="ai-content">
     <p class="ai-status" role="status" aria-live="polite">Reading search results…</p>
     <div class="ai-turns" id="ai-summary-turns"></div>
-    <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false" aria-controls="ai-summary-turns"><span>Show full answer</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
     <span class="ai-copy-status ai-sr-only" role="status"></span>
     <div class="ai-actions">
       <button type="button" class="ai-cancel-wait" hidden>Cancel waiting</button>
@@ -55,11 +54,12 @@
     </div>
     <form class="ai-follow-up" hidden>
       <label><span class="ai-sr-only">Ask a follow-up</span>
-        <input name="question" type="text" maxlength="2000" required autocomplete="off"
-               placeholder="Ask a follow-up…">
+        <textarea name="question" rows="1" maxlength="2000" autocomplete="off"
+                  enterkeyhint="send" placeholder="Ask a follow-up…"></textarea>
       </label>
-      <button type="submit" aria-label="Ask" title="Ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+      <button type="button" class="ai-send" aria-label="Ask" title="Ask"><svg class="ai-send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg><svg class="ai-stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
     </form>
+    <div class="ai-more-row" hidden><button type="button" class="ai-more" aria-expanded="false" aria-controls="ai-summary-turns"><span>Show full answer</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
     <noscript>Enable JavaScript to generate an AI Summary.</noscript>
   </div>
 </section>

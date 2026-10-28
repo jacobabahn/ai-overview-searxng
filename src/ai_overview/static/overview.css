@@ -98,9 +98,24 @@
   margin-inline: 0.15em; padding-inline: 0.2em; line-height: 1.5;
 }
 .ai-overview .ai-question {
-  font: inherit; font-weight: 600; margin-block: 1.5rem 0.5rem;
-  padding-block-start: 1rem; border-block-start: 1px solid var(--ai-border);
-  overflow-wrap: anywhere;
+  /* Each follow-up opens a new turn in the same column as its answer. */
+  font: inherit; font-weight: 600; line-height: 1.5;
+  margin-block: 1.25rem 0.5rem; padding-block-start: 1.25rem;
+  border-block-start: 1px solid var(--ai-border);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ai-overview .ai-turns > article:has(.ai-question) .ai-status { margin-block: 0.5rem; }
+.ai-overview .ai-turns > article .ai-actions:has(button:not([hidden])) { margin-block: 0.5rem 0.75rem; }
+/* A light sweep shows pending work without animating the answer text itself. */
+.ai-overview:is([data-phase="starting"], [data-phase="streaming"], [data-phase="selecting"]) .ai-status {
+  width: fit-content; color: transparent;
+  background: linear-gradient(90deg, var(--ai-muted) 0 35%, var(--ai-text) 50%, var(--ai-muted) 65% 100%) 0 0 / 300% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  animation: ai-status-sweep 1.8s linear infinite;
+}
+@keyframes ai-status-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-overview .ai-status { animation: none !important; color: var(--ai-muted) !important; background: none !important; }
 }
 .ai-overview .ai-sources { font-size: 0.85rem; margin-block: 0.75rem 0; }
 .ai-overview .ai-sources summary { cursor: pointer; color: var(--ai-text); line-height: 1.6; padding-block: 0.6rem; }
@@ -115,18 +130,35 @@
 .ai-overview .ai-actions button { min-height: 44px; }
 .ai-overview .ai-actions:has(button:not([hidden])) { margin-block-start: 0.75rem; }
 .ai-overview .ai-follow-up {
-  display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.75rem;
-  padding: 0.35rem; border: 1px solid var(--ai-border); border-radius: 0.65rem;
+  display: flex; align-items: flex-end; gap: 0.25rem; margin-block-start: 1rem;
+  padding: 0.2rem 0.2rem 0.2rem 0.5rem; border: 1px solid var(--ai-border); border-radius: 0.75rem;
 }
 .ai-overview .ai-follow-up:focus-within { border-color: var(--ai-link); }
-.ai-overview .ai-follow-up label { flex: 1; min-width: 0; }
-.ai-overview .ai-follow-up input {
-  box-sizing: border-box; display: block; width: 100%; margin: 0;
-  padding: 0.6rem; font: inherit; font-size: 1rem;
+.ai-overview .ai-follow-up label { flex: 1; min-width: 0; align-self: center; }
+.ai-overview .ai-follow-up textarea {
+  box-sizing: border-box; display: block; width: 100%; margin: 0; resize: none;
+  field-sizing: content; min-height: 2.5rem; max-height: 10rem; overflow-y: auto;
+  padding: 0.5rem; font: inherit; font-size: 1rem; line-height: 1.5;
   color: var(--ai-text); background: transparent; border: 0; box-shadow: none;
 }
-.ai-overview .ai-follow-up input:focus-visible { outline-offset: -2px; border-radius: 0.35rem; }
-.ai-overview .ai-follow-up button { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; min-width: 44px; min-height: 44px; padding: 0; background: var(--ai-tint); border-color: transparent; }
+.ai-overview .ai-follow-up textarea::placeholder { color: var(--ai-muted); opacity: 1; }
+.ai-overview .ai-follow-up textarea:focus-visible { outline: none; }
+.ai-overview .ai-follow-up button {
+  display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem;
+  min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%;
+  color: var(--ai-link); background: transparent;
+}
+.ai-overview .ai-follow-up button:disabled { opacity: 1; color: var(--ai-muted); }
+.ai-overview .ai-follow-up .ai-stop-icon { fill: currentColor; stroke: none; width: 1.05rem; height: 1.05rem; }
+.ai-overview .ai-follow-up[data-busy="true"] .ai-send-icon,
+.ai-overview .ai-follow-up:not([data-busy="true"]) .ai-stop-icon { display: none; }
+/* Beside the composer, the disclosure control steps back to plain text. */
+.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row { justify-content: flex-start; margin-block-start: 0.25rem; }
+.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row::before,
+.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row::after { display: none; }
+.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row .ai-more {
+  min-width: 0; padding-inline: 0.5rem; border-color: transparent; color: var(--ai-muted); font-weight: 500;
+}
 .ai-overview .ai-collapsed-preview {
   color: var(--ai-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-block: 0.5rem; font-size: 0.9rem;

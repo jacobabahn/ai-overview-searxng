@@ -4,9 +4,8 @@ The plugin is a Python package loaded by SearXNG, with packaged JavaScript, CSS,
 and templates. It targets the Simple theme and builds answers from search snippets.
 Integration tests use SearXNG `2026.9.19-e831fc2a1`.
 
-The browser currently exposes single-question summaries. Follow-up handling
-remains implemented in the service and conversation controller, but its input
-is hidden in the shipped interface. The diagram includes that internal flow.
+After the first answer, the browser can continue the conversation with
+follow-up questions; each one may trigger a fresh internal search.
 
 ```mermaid
 sequenceDiagram
@@ -191,7 +190,19 @@ previews four lines; the disclosure control expands longer answers. Each answer
 has its own source list, and citations open the corresponding source snippet.
 The header provides Stop, Copy, settings, and collapse controls. Settings allow
 regeneration and, when enabled, model selection. Motion respects reduced-motion
-preferences. The follow-up form remains hidden, including after expansion.
+preferences.
+
+The follow-up composer appears once the whole conversation is visible: after
+expansion, or immediately when the first answer fits its preview. It is hidden
+while the first answer streams, after Show less, and at the turn limit. Enter
+sends and Shift+Enter adds a line. The composer stays editable while an answer
+streams, and its send button becomes Stop. Each follow-up turn opens with a
+hairline and its question, in the same column as the answer. Follow-up progress, errors, and Retry appear under that
+turn's answer, and a follow-up that fails before any text returns its question
+to the composer for editing. A follow-up that reuses the previous evidence
+labels its sources "Same as above". Pending status text carries a light sweep
+that reduced motion turns off. Starting a follow-up scrolls its question into view;
+streaming never moves the page.
 
 ## Verification
 
