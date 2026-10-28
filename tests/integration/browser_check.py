@@ -43,7 +43,7 @@ def main() -> None:
         expect(panel.locator(".ai-provenance")).to_have_text("Based on search snippets")
         expect(panel.locator(".ai-provenance")).to_be_hidden()
         expect(panel.locator(".ai-more")).to_be_hidden()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         panel.get_by_role("button", name="Copy answer").focus()
         page.keyboard.press("Escape")
         expect(panel.get_by_role("button", name="Copy answer")).to_be_focused()
@@ -59,14 +59,17 @@ def main() -> None:
         expect(panel.locator(".ai-sources li p").first).not_to_be_empty()
         panel.locator(".ai-sources summary").first.click()
         first_href = panel.locator(".ai-answer a").first.get_attribute("href")
-        # Exercise retained conversation support without exposing the hidden input.
-        panel.locator(".ai-follow-up").evaluate("""form => {
-          form.querySelector('input').value = 'Why is sunset different?';
-          form.requestSubmit();
-        }""")
+        composer = panel.get_by_role("textbox", name="Ask a follow-up")
+        expect(panel.get_by_role("button", name="Ask", exact=True)).to_be_disabled()
+        composer.fill("Why is sunset different?")
+        composer.press("Enter")
+        expect(composer).to_have_value("")
+        expect(panel.locator(".ai-question")).to_have_text("Why is sunset different?")
         expect(panel.locator(".ai-answer")).to_have_count(2)
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
+        expect(composer).to_be_focused()
+        expect(panel.get_by_role("button", name="Copy conversation")).to_be_enabled()
         assert panel.locator(".ai-answer a").first.get_attribute("href") == first_href
         panel.get_by_role("button", name="Show less", exact=True).click()
         expect(panel.locator(".ai-turns > article").nth(1)).to_be_hidden()
@@ -139,7 +142,7 @@ def main() -> None:
         assert body.get("fresh") is True and body.get("client") == client
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel.locator(".ai-answer")).to_have_count(1)
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         expect(panel.locator(".ai-more")).to_be_hidden()
 
         # A failed model selection keeps the existing answer and reports the error.
@@ -234,12 +237,14 @@ def main() -> None:
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-answer")).to_have_text("Selected model answer")
         expect(panel.locator(".ai-more")).to_be_hidden()
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         with page.expect_request(lambda request: request.url.endswith("/stream")):
-            panel.locator(".ai-follow-up").evaluate("""form => {
-              form.querySelector('input').value = 'Why?';
-              form.requestSubmit();
-            }""")
+            panel.get_by_role("textbox", name="Ask a follow-up").fill("Why?")
+            panel.get_by_role("button", name="Ask", exact=True).click()
+        # While the follow-up streams, the composer's button stops it.
+        expect(
+            panel.locator(".ai-follow-up").get_by_role("button", name="Stop generating")
+        ).to_be_visible()
         assert len(pending_generation) == 1
         followup = pending_generation.pop()
         assert followup.request.post_data_json == {
@@ -252,6 +257,65 @@ def main() -> None:
             body='event: done\ndata: {"token":"next","can_follow_up":true}\n\n',
         )
         expect(panel.locator(".ai-status")).to_have_text("")
+        # A follow-up's failure, and its Retry, sit under that turn's partial answer.
+        sources = {
+            "sources": [
+                {
+                    "id": 1,
+                    "url": "https://example.org/sunset",
+                    "title": "Sunset colors",
+                    "snippet": "Longer paths scatter blue.",
+                }
+            ]
+        }
+
+        def ask(question: str) -> Route:
+            with page.expect_request(lambda request: request.url.endswith("/stream")):
+                composer = panel.get_by_role("textbox", name="Ask a follow-up")
+                composer.fill(question)
+                composer.press("Enter")
+            page.wait_for_function("document.querySelector('.ai-stop').hidden === false")
+            return pending_generation.pop()
+
+        def sse(*events: tuple[str, object]) -> str:
+            return "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
+
+        ask("And at sunset?").fulfill(
+            content_type="text/event-stream",
+            body=sse(
+                ("sources", sources),
+                ("text_delta", {"text": "Light crosses more air. [1]"}),
+                ("done", {"token": "sunset", "can_follow_up": True}),
+            ),
+        )
+        expect(panel.locator(".ai-status")).to_have_text("")
+        ask("Why orange?").fulfill(
+            content_type="text/event-stream",
+            body=sse(
+                ("sources", sources),
+                ("text_delta", {"text": "Blue scatters out along"}),
+                ("error", {"code": "interrupted", "message": "The connection ended early."}),
+            ),
+        )
+        failed = panel.locator(".ai-turns > article").last
+        expect(failed.locator(".ai-status")).to_have_text("The connection ended early.")
+        expect(failed.get_by_role("button", name="Retry")).to_be_visible()
+        expect(failed.locator(".ai-turn-status")).to_be_hidden()
+        with page.expect_request(lambda request: request.url.endswith("/stream")):
+            failed.get_by_role("button", name="Retry").click()
+        page.wait_for_function("document.querySelector('.ai-stop').hidden === false")
+        pending_generation.pop().fulfill(
+            content_type="text/event-stream",
+            body=sse(
+                ("sources", sources),
+                ("text_delta", {"text": "Blue scatters out along the longer path. [1]"}),
+                ("done", {"token": "orange", "can_follow_up": True}),
+            ),
+        )
+        expect(panel.locator(".ai-status")).to_have_text("")
+        expect(panel.locator(".ai-turns > article")).to_have_count(4)
+        # Reused evidence says so instead of repeating the same sites.
+        expect(panel.locator(".ai-sources summary span").last).to_have_text("Same as above")
         page.unroute("**/ai-overview/select")
         page.unroute("**/ai-overview/stream")
         # Long answers disclose on demand and on keyboard focus into citations.
@@ -306,7 +370,7 @@ def main() -> None:
         assert abs(dimensions["topBefore"] - dimensions["topAfter"]) < 1
         page.screenshot(path=str(output / "overview-expanding.png"), full_page=True)
         panel.locator(".ai-turns").evaluate("el => el.getAnimations()[0].finish()")
-        expect(panel.locator(".ai-follow-up")).to_be_hidden()
+        expect(panel.locator(".ai-follow-up")).to_be_visible()
         assert answer.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
         # Rapid reversal leaves one animation and settles at the intended size.
         panel.evaluate("""panel => {

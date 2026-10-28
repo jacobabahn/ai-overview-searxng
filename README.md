@@ -8,6 +8,7 @@ or a hosted provider.
 
 - Numbered citations open the source snippets used for the answer.
 - Markdown answers include copyable code blocks with syntax highlighting.
+- Ask follow-up questions; each answer keeps its own sources.
 - Stop, retry, regenerate, and optionally switch between configured models.
 - Fits SearXNG's Simple theme, including dark mode and mobile layouts.
 
