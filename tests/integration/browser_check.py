@@ -1,6 +1,7 @@
 """Run against compose.test.yml: uv run python tests/integration/browser_check.py."""
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -467,6 +468,14 @@ def check_chat_mode(page: Page, output: Path) -> None:
     # Wide screens annotate the thread: the search becomes its first question and
     # each turn's sources sit open beside the answer, lit by the citation in use.
     expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
+    # Citations name their site for tooltips and screen readers.
+    expect(panel.locator('.ai-answer a[data-source-id="1"]').first).to_have_attribute(
+        "aria-label", re.compile(r"^Source 1, example\.org: ")
+    )
+    suggestions = panel.get_by_role("list", name="Ask next")
+    expect(suggestions.get_by_role("button")).to_have_text(
+        ["Why are clouds white?", "Is the sky blue on Mars?"]
+    )
     expect(panel.locator(".ai-sources").first).to_have_attribute("open", "")
     panel.locator('.ai-answer a[data-source-id="1"]').first.hover()
     expect(panel.locator('.ai-sources li[data-source-id="1"]').first).to_have_class("ai-chat-cited")
@@ -492,6 +501,7 @@ def check_chat_mode(page: Page, output: Path) -> None:
     expect_results()
     expect(panel.locator(".ai-turns > article")).to_have_count(2)
     expect(panel.locator(".ai-turns > article").nth(1)).to_be_visible()
+    expect(panel.locator(".ai-chat-suggestions")).to_be_hidden()
     # A non-chat history entry remains only for the page itself.
     assert page.evaluate("history.state?.aiOverviewChat") in (None, False)
 
@@ -523,6 +533,16 @@ def check_chat_mode(page: Page, output: Path) -> None:
     expect(tab).to_be_visible(timeout=20000)
     expect(tab).to_have_attribute("aria-pressed", "false")
     expect(results).to_be_visible()
+    # A suggestion asks itself; a search ending in "??" opens straight into chat.
+    tab.click()
+    expect(suggestions.get_by_role("button")).to_have_count(2)
+    suggestions.get_by_role("button", name="Why are clouds white?").click()
+    expect(panel.locator(".ai-question").last).to_have_text("Why are clouds white?")
+    expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+    page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F%3F")
+    expect(tab).to_have_attribute("aria-pressed", "true", timeout=20000)
+    expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
+    expect(results).to_be_hidden()
     # Not offered while a first answer streams.
     page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
     expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
