@@ -4,6 +4,7 @@
          data-endpoint="{{ url_for('ai_overview.stream') }}"
          data-models-endpoint="{{ url_for('ai_overview.models') }}"
          data-select-endpoint="{{ url_for('ai_overview.select') }}"
+         {% if follow_up_suggestions %}data-suggest-endpoint="{{ url_for('ai_overview.suggest') }}"{% endif %}
          data-profile="{{ profile }}" data-model="{{ model }}">
   <header class="ai-overview-header">
     <h2><span class="ai-sparkle" aria-hidden="true">✦</span>AI Summary</h2>
