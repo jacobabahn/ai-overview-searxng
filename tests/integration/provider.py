@@ -30,9 +30,12 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         messages = body["messages"]
         planning = "Plan retrieval" in messages[0]["content"]
+        suggesting = "Suggest follow-up" in messages[0]["content"]
         text = (
             '{"query":"sunset colors"}'
             if planning
+            else '{"questions":["Why are clouds white?","Is the sky blue on Mars?"]}'
+            if suggesting
             else "The sky looks blue because air scatters blue light more strongly than red light. [1]\n\n"
             "At sunset, light travels through more atmosphere, leaving warmer colors. [2]"
         )

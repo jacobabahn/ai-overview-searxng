@@ -235,3 +235,31 @@ test("the browser cache ID is sent with requests, and Regenerate asks for a fres
   work = c.retry(); await work;
   assert.equal(calls.length, 3);
 });
+
+test("suggestions use the latest continuation and go stale with it", async () => {
+  const calls = [];
+  const conversation = new Conversation({
+    token: "original-search",
+    selected: {profile: "go", model: "first"},
+    endpoints: {stream: "/stream", suggest: "/suggest"},
+    onEvent: () => {},
+    fetch: (url, options) => new Promise(resolve => calls.push({url, body: JSON.parse(options.body), resolve})),
+  });
+  assert.deepEqual(await conversation.suggest(), []);
+  assert.equal(calls.length, 0);
+  const run = conversation.start();
+  (await nextCall(calls, 1)).resolve(done("first-continuation"));
+  await run;
+  const pending = conversation.suggest();
+  const request = await nextCall(calls, 2);
+  assert.deepEqual(request.body, {token: "first-continuation"});
+  request.resolve(json({questions: ["Why?", 7, " ", "How?", "When?", "Where?"]}));
+  assert.deepEqual(await pending, ["Why?", "How?", "When?"]);
+  const stale = conversation.suggest();
+  const second = await nextCall(calls, 3);
+  const followUp = conversation.run("Next?");
+  second.resolve(json({questions: ["Old?"]}));
+  assert.deepEqual(await stale, []);
+  (await nextCall(calls, 4)).resolve(done("second-continuation"));
+  await followUp;
+});
