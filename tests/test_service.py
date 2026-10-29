@@ -444,3 +444,60 @@ def test_web_rejects_invalid_cache_fields(body: dict[str, Any]) -> None:
     response = app.test_client().post("/ai-overview/stream", json={"token": token, **body})
     assert response.status_code == 400
     assert not transport.calls
+
+
+def test_suggestions_come_from_the_latest_turn_and_are_bounded() -> None:
+    service, _, transport = make_service(
+        [
+            "First [1]",
+            '```json\n{"questions": ["initial?", "Why  is it\\nblue?", "why is it blue?",'
+            ' 7, "", "Third?", "Fourth?", "Fifth?"]}\n```',
+            "not json",
+        ]
+    )
+    state = initial_state(
+        "initial?", build_sources([{"url": "https://a.com", "content": "Evidence"}]), "test"
+    )
+    assert service.suggest(state) == ()
+    assert transport.calls == []
+    done = list(service.run(state, None))[-1]
+    continuation = service.signer.loads(done.data["token"])
+    # Asked questions, duplicates, non-strings, and extras are dropped; whitespace collapses.
+    assert service.suggest(continuation) == ("Why is it blue?", "Third?", "Fourth?")
+    context = json.loads(transport.calls[-1]["messages"][-1]["content"])
+    assert context["questions"] == ["initial?"]
+    assert context["snippets"] == [{"title": "a.com", "snippet": "Evidence"}]
+    assert service.suggest(continuation) == ()
+
+
+def test_suggestions_stop_at_the_turn_limit() -> None:
+    service, _, transport = make_service(["First [1]"], max_turns=1)
+    state = initial_state(
+        "q?", build_sources([{"url": "https://a.com", "content": "Evidence"}]), "test"
+    )
+    done = list(service.run(state, None))[-1]
+    assert service.suggest(service.signer.loads(done.data["token"])) == ()
+    assert len(transport.calls) == 1
+
+
+def test_suggest_endpoint_validates_state_and_can_be_disabled() -> None:
+    for enabled in (True, False):
+        service, _, _ = make_service(
+            ["First [1]", '{"questions": ["Next?"]}'], follow_up_suggestions=enabled
+        )
+        app = Flask(__name__)
+        register(app, service)
+        client = app.test_client()
+        state = initial_state(
+            "q?", build_sources([{"url": "https://a.com", "content": "Evidence"}]), "test"
+        )
+        token = list(service.run(state, None))[-1].data["token"]
+        assert client.post("/ai-overview/suggest", json={"token": "bad"}).status_code == 403
+        response = client.post("/ai-overview/suggest", json={"token": token})
+        if enabled:
+            assert response.get_json() == {"questions": ["Next?"]}
+            assert response.headers["Cache-Control"] == "no-store"
+        else:
+            assert response.status_code == 400
+    with pytest.raises(ValueError, match="follow_up_suggestions must be a boolean"):
+        make_service([], follow_up_suggestions="yes")

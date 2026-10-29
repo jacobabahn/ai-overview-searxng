@@ -12,8 +12,9 @@ const ICON = '<svg viewBox="0 0 512 512" class="ionicon sxng-icon-set-big" aria-
 const inactive = {update() {}};
 
 // `expand(value)` sets the panel's disclosure; `focusComposer()` moves focus to
-// the follow-up composer when it is shown, without scrolling to it.
-export function chatMode(panel, {expand, focusComposer}) {
+// the follow-up composer when it is shown, without scrolling to it. `suggest()`
+// resolves to next questions for the latest answer, and `ask(question)` sends one.
+export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   const row = document.getElementById("categories_container");
   if (!row || document.getElementById("ai-chat-tab")) return inactive;
   const root = document.documentElement;
@@ -34,7 +35,10 @@ export function chatMode(panel, {expand, focusComposer}) {
 
   // Wide screens show each turn's sources open in a margin beside its answer.
   const wide = window.matchMedia("(min-width: 64rem)");
-  const query = document.querySelector("#q")?.defaultValue.trim() || "";
+  const typed = document.querySelector("#q")?.defaultValue.trim() || "";
+  // A search ending in "??" opens chat mode as soon as follow-ups are possible.
+  let openWhenReady = /\?\?$/.test(typed);
+  const query = typed.replace(/\?{2,}$/, "?");
   function annotate() {
     if (!active()) return;
     const first = turns.querySelector(":scope > article");
@@ -93,7 +97,48 @@ export function chatMode(panel, {expand, focusComposer}) {
   turns.addEventListener("focusin", event => cite(citation(event)));
   turns.addEventListener("pointerleave", () => cite(null));
 
+  // Suggested next questions sit between the latest answer and the composer, set
+  // like the thread's own questions so they read as the turn that could come next.
+  const suggestions = document.createElement("div");
+  suggestions.className = "ai-chat-suggestions";
+  suggestions.hidden = true;
+  suggestions.innerHTML = '<p class="ai-chat-suggestions-label" id="ai-chat-suggestions-label">Ask next</p><ul role="list" aria-labelledby="ai-chat-suggestions-label"></ul>';
+  panel.querySelector(".ai-follow-up").before(suggestions);
+  suggestions.addEventListener("click", event => {
+    const button = event.target.closest("button");
+    if (button) ask(button.textContent);
+  });
+  let suggestedFor = null;
+  let pendingSuggestions = null;
+  function clearSuggestions() {
+    pendingSuggestions?.abort();
+    pendingSuggestions = null;
+    suggestions.hidden = true;
+    suggestions.querySelector("ul").replaceChildren();
+  }
+  async function offerSuggestions() {
+    // One request per completed answer, and only while chatting.
+    const answer = turns.lastElementChild;
+    if (!suggest || !active() || !answer || suggestedFor === answer) return;
+    suggestedFor = answer;
+    const request = pendingSuggestions = new AbortController();
+    const questions = await suggest({signal: request.signal});
+    if (request !== pendingSuggestions || turns.lastElementChild !== answer) return;
+    pendingSuggestions = null;
+    const list = suggestions.querySelector("ul");
+    list.replaceChildren(...questions.map(question => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = question;
+      item.append(button);
+      return item;
+    }));
+    suggestions.hidden = !questions.length;
+  }
+
   let available = false;
+  let busy = false;
   let saved = null;
   let chatScroll = 0;
   const active = () => saved !== null;
@@ -131,6 +176,7 @@ export function chatMode(panel, {expand, focusComposer}) {
       if (content.hidden) collapse.click();
       expand(true);
       annotate();
+      if (available && !busy) offerSuggestions();
       // Forward returns to where the thread was left; a fresh entry starts at its top.
       window.scrollTo({top: fromHistory ? chatScroll : 0, behavior: "instant"});
       if (!fromHistory) focusComposer();
@@ -189,7 +235,13 @@ export function chatMode(panel, {expand, focusComposer}) {
   return {
     update(state) {
       available = state.canFollowUp;
+      busy = state.busy;
       tab.hidden = !available && !active();
+      if (busy || !available) clearSuggestions();
+      else if (openWhenReady && !active()) {
+        openWhenReady = false;
+        enter();
+      } else offerSuggestions();
     },
   };
 }

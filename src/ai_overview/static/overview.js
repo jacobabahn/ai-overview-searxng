@@ -25,8 +25,9 @@ export function renderCitations(element, text, sources) {
         link.href = source.url;
         link.textContent = String(source.id);
         link.dataset.sourceId = String(source.id);
-        link.setAttribute("aria-label", `Source ${source.id}: ${source.title}`);
-        link.title = source.title;
+        const host = new URL(source.url).hostname.replace(/^www\./, "");
+        link.setAttribute("aria-label", `Source ${source.id}, ${host}: ${source.title}`);
+        link.title = `${host}: ${source.title}`;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         fragment.append(link);
@@ -214,10 +215,19 @@ function mount(panel) {
     token: initialToken,
     client: cacheClient(),
     selected: {profile: panel.dataset.profile, model: panel.dataset.model},
-    endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null},
+    endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null, suggest: panel.dataset.suggestEndpoint},
     onEvent: renderEvent,
   });
-  const chat = chatMode(panel, {expand, focusComposer: () => { if (!form.hidden) input.focus({preventScroll: true}); }});
+  const chat = chatMode(panel, {
+    expand,
+    focusComposer: () => { if (!form.hidden) input.focus({preventScroll: true}); },
+    suggest: options => conversation.suggest(options),
+    ask: question => {
+      input.value = question;
+      input.focus({preventScroll: true});
+      form.requestSubmit();
+    },
+  });
 
   function updateControls(state) {
     panel.dataset.loading = String(state.phase === "streaming");

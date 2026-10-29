@@ -36,6 +36,8 @@ def register(
         template_folder="templates",
     )
     slots = BoundedSemaphore(service.config.max_concurrent)
+    # Suggestions are optional extras with their own bound, so they never make an answer busy.
+    suggestion_slots = BoundedSemaphore(service.config.max_concurrent)
 
     @bp.post("/models")
     def models() -> Response:
@@ -62,6 +64,30 @@ def register(
             return response
         except OverviewError as error:
             return _json_error(error)
+
+    @bp.post("/suggest")
+    def suggest() -> Response:
+        try:
+            body = _json_request({"token"})
+            state = service.signer.loads(body.get("token"))
+            if not service.config.follow_up_suggestions:
+                raise OverviewError("invalid_request", "Follow-up suggestions are disabled.")
+        except OverviewError as error:
+            return _json_error(error)
+        if not suggestion_slots.acquire(blocking=False):
+            return jsonify(questions=[])
+        try:
+            questions = service.suggest(state)
+        except OverviewError:
+            questions = ()
+        except Exception as error:
+            log.warning("Suggestions failed (%s)", type(error).__name__)
+            questions = ()
+        finally:
+            suggestion_slots.release()
+        response = jsonify(questions=list(questions))
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @bp.post("/stream")
     def stream() -> Response:
@@ -142,6 +168,7 @@ def render_panel(service: GenerationService, state: Conversation) -> Markup:
             "overview.html",
             token=service.signer.dumps(state),
             model_picker=service.config.model_picker,
+            follow_up_suggestions=service.config.follow_up_suggestions,
             profile=state.profile,
             model=state.model or profile.model,
         )

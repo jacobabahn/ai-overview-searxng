@@ -136,6 +136,25 @@ export class Conversation {
     return this.#modelsPending;
   }
 
+  // Optional next questions for the latest completed answer; failures yield none.
+  async suggest({signal} = {}) {
+    if (!this.#endpoints.suggest || !this.#canFollowUp || this.#active) return [];
+    const token = this.#token;
+    try {
+      const response = await this.#fetch(this.#endpoints.suggest, {
+        method: "POST", credentials: "same-origin", signal,
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token}),
+      });
+      const data = await response.json();
+      // A newer answer or restart makes these stale.
+      if (!response.ok || token !== this.#token || this.#active || !Array.isArray(data.questions)) return [];
+      return data.questions.filter(question => typeof question === "string" && question.trim()).slice(0, 3);
+    } catch {
+      return [];
+    }
+  }
+
   async #select(choice, operation) {
     operation.phase = "selecting";
     this.#emit("state");
