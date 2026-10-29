@@ -89,11 +89,45 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
   .ai-overview[data-chat="true"] .ai-sources[open] summary { border-end-start-radius: 0; border-end-end-radius: 0; }
 }
 
-/* The composer stays reachable at the bottom of the viewport in long threads. */
+/* The composer is the next search: a follow-up may search again, so it wears the
+   host's search box (surface, radius, shadow) and docks at the bottom of the
+   viewport, where the thread fades out behind it. */
 .ai-overview[data-chat="true"] .ai-follow-up {
-  position: sticky; inset-block-end: 0.75rem; z-index: 1; margin-block-start: 2rem;
-  background: var(--ai-chat-surface);
-  box-shadow: 0 0 0 0.75rem var(--ai-chat-surface);
+  --ai-chat-dock: max(1rem, env(safe-area-inset-bottom));
+  position: sticky; inset-block-end: var(--ai-chat-dock); z-index: 1;
+  align-items: flex-end; gap: 0.5rem; margin-block-start: 2rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem; border: 0; background: transparent;
+}
+/* Layers inside the composer: the fade behind it, then its search-box surface. */
+.ai-overview[data-chat="true"] .ai-follow-up::before,
+.ai-overview[data-chat="true"] .ai-follow-up::after { content: ""; position: absolute; pointer-events: none; }
+.ai-overview[data-chat="true"] .ai-follow-up::before {
+  z-index: -2; inset: -2.5rem -1rem calc(-1 * var(--ai-chat-dock) - 1px);
+  background: linear-gradient(to bottom, transparent, var(--ai-chat-surface) 2.25rem);
+}
+.ai-overview[data-chat="true"] .ai-follow-up::after {
+  z-index: -1; inset: 0; border: 1px solid transparent; border-radius: 0.8rem;
+  background: var(--color-search-background, var(--ai-bg));
+  box-shadow: var(--color-search-shadow, 0 2px 8px #22262e40);
+}
+.ai-overview[data-chat="true"] .ai-follow-up:focus-within::after {
+  border-color: color-mix(in srgb, var(--ai-link) 45%, transparent);
+}
+.ai-overview[data-chat="true"] .ai-follow-up textarea { min-height: 2.25rem; padding: 0.375rem 0; }
+.ai-overview[data-chat="true"] .ai-follow-up button {
+  width: 2.25rem; height: 2.25rem; min-width: 2.25rem; min-height: 2.25rem; color: var(--ai-muted);
+}
+/* Ready to send, and stopping an answer, are filled; an empty composer stays quiet. */
+.ai-overview[data-chat="true"] .ai-follow-up:not([data-busy="true"]) button:enabled { color: var(--ai-bg); background: var(--ai-link); }
+.ai-overview[data-chat="true"] .ai-follow-up:not([data-busy="true"]) button:enabled:hover { background: color-mix(in srgb, var(--ai-link) 85%, var(--ai-text)); }
+.ai-overview[data-chat="true"] .ai-follow-up[data-busy="true"] button { color: var(--ai-bg); background: var(--ai-text); }
+.ai-overview[data-chat="true"] .ai-follow-up[data-busy="true"] .ai-stop-icon { width: 0.875rem; height: 0.875rem; }
+.ai-overview[data-chat="true"] .ai-follow-up button:focus-visible { outline-offset: 2px; }
+@media (hover: none) {
+  .ai-overview[data-chat="true"] .ai-follow-up button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ai-overview[data-chat="true"] .ai-follow-up button { transition: background-color 120ms ease-out, color 120ms ease-out; }
 }
 
 /* Wide screens: an annotated page. The answer keeps a reading measure and each
