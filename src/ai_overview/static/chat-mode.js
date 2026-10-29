@@ -9,6 +9,7 @@ const HISTORY_KEY = "aiOverviewChat";
 // Ionicons chatbubble-outline (MIT), in the same icon set and stroke as the host's.
 const ICON = '<svg viewBox="0 0 512 512" class="ionicon sxng-icon-set-big" aria-hidden="true"><path d="M87.48 380c1.2-4.38-1.43-10.47-3.94-14.86a42.63 42.63 0 0 0-2.54-3.8 199.81 199.81 0 0 1-33-110C47.64 139.09 140.72 48 255.82 48 356.2 48 440 117.54 459.57 209.85a199 199 0 0 1 4.43 41.64c0 112.41-89.49 204.93-204.59 204.93-18.31 0-43-4.6-56.47-8.37s-26.92-8.77-30.39-10.11a31.14 31.14 0 0 0-11.13-2.07 30.7 30.7 0 0 0-12.08 2.43L81.5 467.23a16.48 16.48 0 0 1-4.78 1.26 9.81 9.81 0 0 1-9.75-9.85 16.17 16.17 0 0 1 .6-3.33Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32px"/></svg>';
 
+const SEND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';
 const inactive = {update() {}};
 
 // `expand(value)` sets the panel's disclosure; `focusComposer()` moves focus to
@@ -102,7 +103,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   const suggestions = document.createElement("div");
   suggestions.className = "ai-chat-suggestions";
   suggestions.hidden = true;
-  suggestions.innerHTML = '<p class="ai-chat-suggestions-label" id="ai-chat-suggestions-label">Ask next</p><ul role="list" aria-labelledby="ai-chat-suggestions-label"></ul>';
+  suggestions.innerHTML = '<p class="ai-sr-only" id="ai-chat-suggestions-label">Ask next</p><ul role="list" aria-labelledby="ai-chat-suggestions-label"></ul>';
   panel.querySelector(".ai-follow-up").before(suggestions);
   suggestions.addEventListener("click", event => {
     const button = event.target.closest("button");
@@ -131,6 +132,8 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = question;
+      // The composer's send arrow: choosing a suggestion asks it right away.
+      button.insertAdjacentHTML("beforeend", SEND_ICON);
       item.append(button);
       return item;
     }));

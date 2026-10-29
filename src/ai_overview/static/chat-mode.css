@@ -43,20 +43,29 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
 .ai-overview[data-chat="true"] .ai-turns > article + article { padding-block-start: var(--ai-chat-turn-gap); }
 .ai-overview[data-chat="true"] .ai-turns { margin-block-start: 1rem; }
 
-/* Suggested next questions continue the thread in its own question type, quieter
-   until pointed at; they appear only in chat mode. */
+/* Suggested next questions: an aside under the latest answer, set at body size
+   behind a thin rule so they never read as turns already asked. Each carries the
+   composer's send arrow, brightening on hover and focus. */
 .ai-overview:not([data-chat="true"]) .ai-chat-suggestions { display: none; }
-.ai-overview .ai-chat-suggestions { margin-block-start: var(--ai-chat-turn-gap); }
-.ai-overview .ai-chat-suggestions-label { margin: 0 0 0.25rem; color: var(--ai-muted); font-size: 0.8125rem; }
+.ai-overview .ai-chat-suggestions {
+  margin-block-start: 1.5rem; padding-inline-start: 0.5rem;
+  border-inline-start: 1px solid var(--ai-border);
+}
 .ai-overview .ai-chat-suggestions ul { list-style: none; margin: 0; padding: 0; }
 .ai-overview .ai-chat-suggestions button {
-  display: block; width: 100%; min-height: 44px; margin-inline-start: -0.5rem; padding: 0.4rem 0.5rem;
-  border: 0; border-radius: 0.4rem; background: transparent; text-align: start;
-  font-size: var(--ai-chat-follow-up); font-weight: 500; line-height: 1.3; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 0.5rem; width: 100%; min-height: 2.25rem;
+  padding: 0.3rem 0.5rem; border: 0; border-radius: 0.4rem; background: transparent;
+  text-align: start; font-size: 0.9375rem; font-weight: 400; line-height: 1.4;
   color: var(--ai-muted); overflow-wrap: anywhere;
 }
-.ai-overview .ai-chat-suggestions button:enabled:hover { color: var(--ai-text); background: var(--ai-tint); }
-.ai-overview .ai-chat-suggestions + .ai-follow-up { margin-block-start: 1rem; }
+.ai-overview .ai-chat-suggestions button svg { flex: none; width: 1rem; height: 1rem; opacity: 0.45; }
+.ai-overview .ai-chat-suggestions button:enabled:is(:hover, :focus-visible) { color: var(--ai-text); background: transparent; }
+.ai-overview .ai-chat-suggestions button:is(:hover, :focus-visible) svg { opacity: 1; color: var(--ai-link); }
+.ai-overview .ai-chat-suggestions button:focus-visible { outline-offset: 0; }
+@media (hover: none) {
+  .ai-overview .ai-chat-suggestions button { min-height: 44px; }
+}
+.ai-overview .ai-chat-suggestions + .ai-follow-up { margin-block-start: 1.25rem; }
 
 /* Narrow screens keep sources folded under each answer; the summary becomes a
    full-width row that is easy to find and tap. */
