@@ -9,7 +9,10 @@ or a hosted provider.
 - Numbered citations open the source snippets used for the answer.
 - Markdown answers include copyable code blocks with syntax highlighting.
 - Ask follow-up questions; each answer keeps its own sources.
-- Stop, retry, regenerate, and optionally switch between configured models.
+- Optional chat mode turns the results page into a full-width conversation with
+  suggested next questions. End a search with `??` to open straight into it.
+- Stop, retry, regenerate, and optionally switch between configured models and
+  choose how much the model thinks.
 - Fits SearXNG's Simple theme, including dark mode and mobile layouts.
 
 **Early-stage software for personal instances.** Tested with SearXNG
@@ -58,8 +61,8 @@ To use something else:
   `AI_OVERVIEW_API_KEY`. The key stays on the server.
 - **OpenAI-compatible local server:** set the backend to `local` and the endpoint
   to its full `/v1/chat/completions` URL.
-- **Several models, a model picker, or tuned limits:** mount an `overview.yml`
-  instead of setting these variables.
+- **Several models, a model picker, chat mode, thinking control, or tuned
+  limits:** mount an `overview.yml` instead of setting these variables.
 
 [Provider configuration](docs/providers.md) covers every variable and the YAML
 format. There is no automatic fallback to another provider.
@@ -128,21 +131,26 @@ self-hosted; local models keep generation on the configured server.
 Search-engine requests still follow your SearXNG settings.
 
 - A summary is generated only for first-page, General-category searches that end
-  in `?`.
+  in `?`. With chat mode enabled, ending in `??` opens the conversation instead of
+  the results list.
 - Answers are written from search snippets, not full pages. A citation shows
   which source the model was given; it does not prove the claim is correct.
 - Completed answers are cached in server memory for 30 minutes per browser, so
   reloading or repeating a search does not pay for a new generation. Regenerate
   always asks the model again.
-- The browser's local storage holds only the selected model and a random ID that
-  scopes the cache to that browser.
-- Each worker runs at most 2 generations at once. There are no per-user rate or
-  spending limits, so a public instance can run up provider costs.
+- In chat mode, each completed answer makes one extra, smaller request to the
+  same provider for suggested next questions. It sends the conversation and that
+  turn's snippets again. Set `follow_up_suggestions: false` to turn it off.
+- The browser's local storage holds only the selected model and thinking level,
+  and a random ID that scopes the cache to that browser.
+- Each worker runs at most 2 generations at once, plus up to 2 suggestion
+  requests in chat mode. There are no per-user rate or spending limits, so a
+  public instance can run up provider costs.
 - Compatibility is tested against recorded provider responses, not live against
   every backend and model.
 
-[Architecture](docs/ARCHITECTURE.md) describes state handling, budgets, and the
-follow-up API, which the current interface does not expose.
+[Architecture](docs/ARCHITECTURE.md) describes state handling, budgets, and how
+follow-ups are planned and searched.
 
 ## Troubleshooting
 
