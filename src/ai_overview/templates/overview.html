@@ -1,9 +1,10 @@
 <link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='overview.css') }}">
-<link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='chat-mode.css') }}">
+{% if chat_mode %}<link rel="stylesheet" href="{{ url_for('ai_overview.static', filename='chat-mode.css') }}">{% endif %}
 <section class="ai-overview" aria-label="AI Summary" data-expanded="false" data-loading="true" data-token="{{ token }}"
          data-endpoint="{{ url_for('ai_overview.stream') }}"
          data-models-endpoint="{{ url_for('ai_overview.models') }}"
          data-select-endpoint="{{ url_for('ai_overview.select') }}"
+         {% if chat_mode %}data-chat-mode="true"{% endif %}
          {% if follow_up_suggestions %}data-suggest-endpoint="{{ url_for('ai_overview.suggest') }}"{% endif %}
          data-profile="{{ profile }}" data-model="{{ model }}">
   <header class="ai-overview-header">

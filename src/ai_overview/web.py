@@ -70,7 +70,8 @@ def register(
         try:
             body = _json_request({"token"})
             state = service.signer.loads(body.get("token"))
-            if not service.config.follow_up_suggestions:
+            # Suggestions are part of chat mode, so both settings must allow them.
+            if not (service.config.chat_mode and service.config.follow_up_suggestions):
                 raise OverviewError("invalid_request", "Follow-up suggestions are disabled.")
         except OverviewError as error:
             return _json_error(error)
@@ -168,7 +169,8 @@ def render_panel(service: GenerationService, state: Conversation) -> Markup:
             "overview.html",
             token=service.signer.dumps(state),
             model_picker=service.config.model_picker,
-            follow_up_suggestions=service.config.follow_up_suggestions,
+            chat_mode=service.config.chat_mode,
+            follow_up_suggestions=service.config.chat_mode and service.config.follow_up_suggestions,
             profile=state.profile,
             model=state.model or profile.model,
         )
