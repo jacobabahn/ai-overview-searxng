@@ -1,7 +1,10 @@
 # Copy to overview.yml, choose a default, and set the corresponding credential.
 # Model identifiers below are examples, not a claim of live compatibility.
 default_profile: ollama
-model_picker: false
+model_picker: false  # true to let readers switch models
+# Adds a Chat tab and the `??` shortcut, with suggested next questions.
+# chat_mode: true
+# follow_up_suggestions: false  # skip the extra suggestions request
 max_sources: 8
 evidence_bytes: 12000
 max_turns: 6
@@ -48,6 +51,10 @@ profiles:
     model: deepseek-v4.1-flash
     api_key_env: OPENCODE_GO_API_KEY
     discover_models: true
+    # Adds a Thinking choice under the picker. Needs model_picker: true.
+    # thinking_control: true
+    # Writes suggestions alongside the answer. Leave off for one-at-a-time servers.
+    # parallel_suggestions: true
     # Optional for models/gateways supporting DeepSeek's chat thinking control:
     # options:
     #   thinking:
