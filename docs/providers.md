@@ -107,7 +107,7 @@ With `model_picker: false` (the default), the configured default profile is used
 There is no automatic provider fallback.
 
 Set `thinking_control: true` on a profile to add a Thinking choice under the model
-picker (it needs `model_picker: true`). Readers pick Model default, or a level the
+picker (it needs `model_picker: true`). Readers pick Default, or a level the
 selected model's protocol can express, sent in that protocol's own terms:
 
 | Protocol | Levels | Sent as |

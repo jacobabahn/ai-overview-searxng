@@ -171,15 +171,24 @@ function mount(panel) {
   const applyModel = panel.querySelector(".ai-apply-model");
   const picker = panel.querySelector(".ai-model");
   const thinkingRow = panel.querySelector(".ai-thinking-settings");
-  const thinkingPicker = panel.querySelector(".ai-thinking");
-  // The thinking levels a drafted model offers; "Model default" sends none.
+  const thinkingScale = panel.querySelector(".ai-thinking");
+  // The thinking levels a drafted model offers, as one scale; "Default" sends none.
   function renderThinking(choice, value) {
     const offered = choice?.thinking_levels || [];
-    thinkingPicker.replaceChildren(new Option("Model default", ""),
-      ...offered.map(level => new Option(THINKING_LABELS[level] || level, level)));
-    thinkingPicker.value = offered.includes(value) ? value : "";
+    const chosen = offered.includes(value) ? value : "";
+    thinkingScale.replaceChildren(...["", ...offered].map(level => {
+      const option = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "ai-summary-thinking";
+      input.value = level;
+      input.checked = level === chosen;
+      option.append(input, level ? THINKING_LABELS[level] || level : "Default");
+      return option;
+    }));
     thinkingRow.hidden = !offered.length;
   }
+  const thinkingValue = () => thinkingScale.querySelector("input:checked")?.value || "";
   const draftChoice = () => (picker.value === "" ? undefined : conversation.state.choices[Number(picker.value)]);
   function resetDraft() {
     if (!picker) return;
@@ -198,7 +207,7 @@ function mount(panel) {
     resetDraft();
     options.hidden = false;
     optionsToggle.setAttribute("aria-expanded", "true");
-    options.querySelector(".ai-settings-close").focus();
+    options.focus({preventScroll: true});
   });
   options.querySelector(".ai-settings-close").addEventListener("click", () => closeOptions(true));
   document.addEventListener("focusin", event => {
@@ -274,11 +283,10 @@ function mount(panel) {
     if (picker) {
       picker.disabled = state.busy || state.loadingModels || !state.choices.length;
       reloadModels.disabled = state.busy || state.loadingModels;
-      thinkingPicker.disabled = picker.disabled;
+      thinkingRow.disabled = picker.disabled;
       const choice = picker.value === "" ? undefined : state.choices[Number(picker.value)];
       const modelChanged = choice && (choice.profile !== state.selected.profile || choice.model !== state.selected.model);
-      const changed = modelChanged || (choice && (thinkingPicker.value || null) !== (state.selected.thinking ?? null));
-      applyModel.textContent = modelChanged ? "Use model and restart" : "Apply and restart";
+      const changed = modelChanged || (choice && (thinkingValue() || null) !== (state.selected.thinking ?? null));
       applyModel.hidden = !changed;
       regenerate.hidden = Boolean(changed);
       applyModel.disabled = picker.disabled || !choice?.available || !changed;
@@ -300,16 +308,16 @@ function mount(panel) {
 
   if (picker) {
     picker.addEventListener("change", () => {
-      renderThinking(draftChoice(), thinkingPicker.value);
+      renderThinking(draftChoice(), thinkingValue());
       updateControls(conversation.state);
     });
-    thinkingPicker.addEventListener("change", () => updateControls(conversation.state));
+    thinkingScale.addEventListener("change", () => updateControls(conversation.state));
     reloadModels.addEventListener("click", () => conversation.loadModels());
     applyModel.addEventListener("click", async () => {
       const choice = conversation.state.choices[Number(picker.value)];
       if (applyModel.disabled || !choice?.available) return;
       try {
-        await conversation.restart({...choice, thinking: thinkingPicker.value || null});
+        await conversation.restart({...choice, thinking: thinkingValue() || null});
       } catch (error) {
         modelStatus.textContent = error.message;
         updateControls(conversation.state);
@@ -442,7 +450,7 @@ function mount(panel) {
       if (picker) {
         const thinking = state.selected.thinking;
         panel.querySelector(".ai-current-model").textContent =
-          `Current: ${state.selected.model}${thinking ? `, thinking ${(THINKING_LABELS[thinking] || thinking).toLowerCase()}` : ""}`;
+          `Answering with ${state.selected.model}${thinking ? `, thinking ${(THINKING_LABELS[thinking] || thinking).toLowerCase()}` : ""}.`;
         picker.value = String(state.choices.findIndex(c => c.profile === state.selected.profile && c.model === state.selected.model));
         renderThinking(draftChoice(), thinking);
         try { localStorage.setItem(selectionKey, JSON.stringify(state.selected)); } catch { /* Storage is optional. */ }
