@@ -93,13 +93,17 @@ def register(
     @bp.post("/stream")
     def stream() -> Response:
         try:
-            body = _json_request({"token", "question", "client", "fresh"})
+            body = _json_request({"token", "question", "client", "fresh", "suggest"})
             client = body.get("client")
             fresh = body.get("fresh", False)
+            suggest = body.get("suggest", False)
             if (
-                client is not None and (not isinstance(client, str) or not 0 < len(client) <= 64)
-            ) or type(fresh) is not bool:
+                (client is not None and (not isinstance(client, str) or not 0 < len(client) <= 64))
+                or type(fresh) is not bool
+                or type(suggest) is not bool
+            ):
                 raise OverviewError("invalid_request", "Invalid request.")
+            suggest = suggest and service.config.chat_mode and service.config.follow_up_suggestions
             state = service.signer.loads(body.get("token"))
             question = body.get("question")
             if question is not None:
@@ -128,7 +132,11 @@ def register(
         def generate() -> Iterator[str]:
             try:
                 yield ": connected\n\n"
-                yield from (sse_event(event) for event in service.run(state, question, client))
+                for event in service.run(state, question, client, suggest):
+                    yield sse_event(event)
+                    # Suggestions may follow a finished answer; they don't hold its slot.
+                    if event.name == "done":
+                        release()
             except OverviewError as error:
                 yield sse_event(Event("error", {"code": error.code, "message": error.message}))
             except Exception as error:

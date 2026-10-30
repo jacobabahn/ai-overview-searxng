@@ -76,7 +76,7 @@ class Conversation:
 
 @dataclass(frozen=True, slots=True)
 class Event:
-    name: Literal["status", "sources", "text_delta", "done", "error"]
+    name: Literal["status", "sources", "text_delta", "suggestions", "done", "error"]
     data: dict[str, Any]
 
 
