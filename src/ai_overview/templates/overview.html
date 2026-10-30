@@ -32,8 +32,15 @@
       <select class="ai-model" id="ai-summary-model" aria-label="Overview model" aria-describedby="ai-model-help" disabled>
         <option>{{ profile }} / {{ model }}</option>
       </select>
+      <div class="ai-thinking-settings" hidden>
+        <label for="ai-summary-thinking">Thinking</label>
+        <select class="ai-thinking" id="ai-summary-thinking" aria-describedby="ai-thinking-help">
+          <option value="">Model default</option>
+        </select>
+        <p id="ai-thinking-help" class="ai-model-help">Less thinking answers sooner; more can help with harder questions.</p>
+      </div>
       <p class="ai-current-model">Current: {{ model }}</p>
-      <p id="ai-model-help" class="ai-model-help">Changes apply when you restart. Your model choice is remembered in this browser.</p>
+      <p id="ai-model-help" class="ai-model-help">Changes apply when you restart. Your choices are remembered in this browser.</p>
       <p class="ai-model-status" role="status" aria-live="polite"></p>
     </div>
     {% endif %}

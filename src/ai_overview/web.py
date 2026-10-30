@@ -56,9 +56,11 @@ def register(
     @bp.post("/select")
     def select() -> Response:
         try:
-            body = _json_request({"token", "profile", "model"})
+            body = _json_request({"token", "profile", "model", "thinking"})
             state = service.signer.loads(body.get("token"))
-            selected = catalog.select(state, body.get("profile"), body.get("model"))
+            selected = catalog.select(
+                state, body.get("profile"), body.get("model"), body.get("thinking")
+            )
             response = jsonify(token=service.signer.dumps(selected))
             response.headers["Cache-Control"] = "no-store"
             return response

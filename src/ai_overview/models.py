@@ -48,6 +48,8 @@ class Conversation:
     v: int = 1
     model: Optional[str] = None
     protocol: Optional[str] = None
+    # A reader-chosen thinking level; None leaves the profile's own.
+    thinking: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Conversation":
@@ -71,6 +73,7 @@ class Conversation:
             v=data["v"],
             model=data.get("model"),
             protocol=data.get("protocol"),
+            thinking=data.get("thinking"),
         )
 
 

@@ -81,7 +81,7 @@ export class Conversation {
   constructor({token, selected, endpoints, onEvent, client, wantsSuggestions = () => false, fetch: request = globalThis.fetch.bind(globalThis)}) {
     this.#initialToken = this.#token = token;
     this.#client = client;
-    this.#selected = {...selected};
+    this.#selected = {thinking: null, ...selected};
     this.#endpoints = endpoints;
     this.#fetch = request;
     this.#notify = onEvent;
@@ -191,11 +191,12 @@ export class Conversation {
   async #select(choice, operation) {
     operation.phase = "selecting";
     this.#emit("state");
+    const thinking = choice.thinking ?? null;
     const result = await this.#modelRequest(this.#endpoints.select,
-      {profile: choice.profile, model: choice.model}, operation.controller.signal);
+      {profile: choice.profile, model: choice.model, ...(thinking ? {thinking} : {})}, operation.controller.signal);
     if (typeof result.token !== "string" || !result.token) throw new Error("Invalid model selection response.");
     this.#token = result.token;
-    this.#selected = {profile: choice.profile, model: choice.model};
+    this.#selected = {profile: choice.profile, model: choice.model, thinking};
     this.#reset();
   }
 
@@ -236,11 +237,15 @@ export class Conversation {
   start(saved) {
     return this.#exclusive("starting", async operation => {
       const modelsReady = this.loadModels();
-      if (saved && (saved.profile !== this.#selected.profile || saved.model !== this.#selected.model)) {
+      const differs = saved && (saved.profile !== this.#selected.profile || saved.model !== this.#selected.model
+        || (saved.thinking ?? null) !== this.#selected.thinking);
+      if (differs) {
         await modelsReady;
         const choice = this.#choices.find(c => c.available && c.profile === saved.profile && c.model === saved.model);
+        // A remembered thinking level the model no longer offers falls back to its default.
+        const thinking = choice?.thinking_levels?.includes(saved.thinking) ? saved.thinking : null;
         if (choice) {
-          try { await this.#select(choice, operation); }
+          try { await this.#select({...choice, thinking}, operation); }
           catch (error) {
             operation.controller.signal.throwIfAborted();
             this.#emit("models_error", {message: `${error.message} Using the current model.`});
