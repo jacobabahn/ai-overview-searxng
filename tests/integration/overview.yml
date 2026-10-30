@@ -14,3 +14,4 @@ profiles:
     endpoint: http://provider:9876/v1/chat/completions
     api_key_env: FIXTURE_KEY
     discover_models: true
+    thinking_control: true

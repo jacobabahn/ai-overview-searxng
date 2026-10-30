@@ -33,6 +33,8 @@ class Profile:
     # Start chat-mode suggestions alongside the answer; for providers that serve
     # requests in parallel.
     parallel_suggestions: bool = False
+    # Let readers choose how much the model thinks (needs model_picker).
+    thinking_control: bool = False
     model_protocols: dict[str, str] = field(default_factory=dict)
 
 
@@ -116,7 +118,7 @@ class Config:
                 raise ValueError("api_key_env must be an environment variable name")
             values.setdefault("protocol", protocol)
             values.setdefault("endpoint", endpoint)
-            for flag in ("discover_models", "parallel_suggestions"):
+            for flag in ("discover_models", "parallel_suggestions", "thinking_control"):
                 if type(values.get(flag, False)) is not bool:
                     raise ValueError(f"{flag} must be a boolean")
             if values.get("discover_models") and backend != "opencode_go":

@@ -80,6 +80,8 @@ function sameSources(sources, previous) {
     sources.every((source, index) => source.id === previous[index].id && source.url === previous[index].url);
 }
 
+const THINKING_LABELS = {off: "Off", on: "On", low: "Low", medium: "Medium", high: "High"};
+
 function mount(panel) {
   if (panel.dataset.mounted) return;
   panel.dataset.mounted = "true";
@@ -168,10 +170,22 @@ function mount(panel) {
   const preview = panel.querySelector(".ai-collapsed-preview");
   const applyModel = panel.querySelector(".ai-apply-model");
   const picker = panel.querySelector(".ai-model");
+  const thinkingRow = panel.querySelector(".ai-thinking-settings");
+  const thinkingPicker = panel.querySelector(".ai-thinking");
+  // The thinking levels a drafted model offers; "Model default" sends none.
+  function renderThinking(choice, value) {
+    const offered = choice?.thinking_levels || [];
+    thinkingPicker.replaceChildren(new Option("Model default", ""),
+      ...offered.map(level => new Option(THINKING_LABELS[level] || level, level)));
+    thinkingPicker.value = offered.includes(value) ? value : "";
+    thinkingRow.hidden = !offered.length;
+  }
+  const draftChoice = () => (picker.value === "" ? undefined : conversation.state.choices[Number(picker.value)]);
   function resetDraft() {
     if (!picker) return;
     const {choices, selected} = conversation.state;
     if (choices.length) picker.value = String(choices.findIndex(c => c.profile === selected.profile && c.model === selected.model));
+    renderThinking(draftChoice(), selected.thinking);
     updateControls(conversation.state);
   }
   function closeOptions(restoreFocus = false) {
@@ -260,8 +274,11 @@ function mount(panel) {
     if (picker) {
       picker.disabled = state.busy || state.loadingModels || !state.choices.length;
       reloadModels.disabled = state.busy || state.loadingModels;
+      thinkingPicker.disabled = picker.disabled;
       const choice = picker.value === "" ? undefined : state.choices[Number(picker.value)];
-      const changed = choice && (choice.profile !== state.selected.profile || choice.model !== state.selected.model);
+      const modelChanged = choice && (choice.profile !== state.selected.profile || choice.model !== state.selected.model);
+      const changed = modelChanged || (choice && (thinkingPicker.value || null) !== (state.selected.thinking ?? null));
+      applyModel.textContent = modelChanged ? "Use model and restart" : "Apply and restart";
       applyModel.hidden = !changed;
       regenerate.hidden = Boolean(changed);
       applyModel.disabled = picker.disabled || !choice?.available || !changed;
@@ -282,13 +299,17 @@ function mount(panel) {
   });
 
   if (picker) {
-    picker.addEventListener("change", () => updateControls(conversation.state));
+    picker.addEventListener("change", () => {
+      renderThinking(draftChoice(), thinkingPicker.value);
+      updateControls(conversation.state);
+    });
+    thinkingPicker.addEventListener("change", () => updateControls(conversation.state));
     reloadModels.addEventListener("click", () => conversation.loadModels());
     applyModel.addEventListener("click", async () => {
       const choice = conversation.state.choices[Number(picker.value)];
       if (applyModel.disabled || !choice?.available) return;
       try {
-        await conversation.restart(choice);
+        await conversation.restart({...choice, thinking: thinkingPicker.value || null});
       } catch (error) {
         modelStatus.textContent = error.message;
         updateControls(conversation.state);
@@ -408,6 +429,7 @@ function mount(panel) {
         option.selected = choice.profile === state.selected.profile && choice.model === state.selected.model;
         picker.append(option);
       }
+      renderThinking(draftChoice(), state.selected.thinking);
       modelStatus.textContent = event.data.warnings.join(" ");
       updateControls(state);
     }
@@ -418,8 +440,11 @@ function mount(panel) {
       activeTurn = failedTurn = null;
       input.value = "";
       if (picker) {
-        panel.querySelector(".ai-current-model").textContent = `Current: ${state.selected.model}`;
+        const thinking = state.selected.thinking;
+        panel.querySelector(".ai-current-model").textContent =
+          `Current: ${state.selected.model}${thinking ? `, thinking ${(THINKING_LABELS[thinking] || thinking).toLowerCase()}` : ""}`;
         picker.value = String(state.choices.findIndex(c => c.profile === state.selected.profile && c.model === state.selected.model));
+        renderThinking(draftChoice(), thinking);
         try { localStorage.setItem(selectionKey, JSON.stringify(state.selected)); } catch { /* Storage is optional. */ }
         updateControls(state);
       }

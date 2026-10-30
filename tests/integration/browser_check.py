@@ -114,6 +114,21 @@ def main() -> None:
         page.reload()
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
+        # The model's thinking levels: choosing one restarts with it, and it is remembered.
+        panel.get_by_role("button", name="Summary settings").click()
+        thinking = panel.get_by_role("combobox", name="Thinking")
+        expect(thinking.locator("option")).to_have_text(
+            ["Model default", "Off", "Low", "Medium", "High"]
+        )
+        thinking.select_option("off")
+        with page.expect_request(lambda request: request.url.endswith("/select")) as chosen:
+            panel.get_by_role("button", name="Apply and restart", exact=True).click()
+        assert json.loads(chosen.value.post_data or "{}")["thinking"] == "off"
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel.locator(".ai-current-model")).to_have_text("Current: glm-5.2, thinking off")
+        page.reload()
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel.locator(".ai-current-model")).to_have_text("Current: glm-5.2, thinking off")
         page.screenshot(path=str(output / "overview-desktop.png"), full_page=True)
         panel.get_by_role("button", name="Collapse overview").click()
         expect(panel.locator(".ai-content")).to_be_hidden()

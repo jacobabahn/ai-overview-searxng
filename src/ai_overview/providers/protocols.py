@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote
 
 from ..errors import OverviewError
+from ..thinking import thinking_budget
 from .parsing import lines, sse
 
 if TYPE_CHECKING:
@@ -146,7 +147,8 @@ class Anthropic(ProtocolAdapter):
         return profile.endpoint, {
             "model": profile.model,
             "stream": True,
-            "max_tokens": limit,
+            # Thinking spends from max_tokens, so its budget comes on top of the answer's.
+            "max_tokens": limit + thinking_budget(profile.options),
             "system": "\n\n".join(m.content for m in messages if m.role == "system"),
             "messages": [asdict(m) for m in messages if m.role != "system"],
             **profile.options,
@@ -203,7 +205,10 @@ class Gemini(ProtocolAdapter):
                 for m in messages
                 if m.role != "system"
             ],
-            "generationConfig": {"maxOutputTokens": limit, **profile.options},
+            "generationConfig": {
+                "maxOutputTokens": limit + thinking_budget(profile.options),
+                **profile.options,
+            },
         }
 
     def decode(self, value: dict[str, Any]) -> Delta:

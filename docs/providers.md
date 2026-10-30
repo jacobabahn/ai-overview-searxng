@@ -106,6 +106,23 @@ in the background. Restoring a different saved model still waits for validation.
 With `model_picker: false` (the default), the configured default profile is used.
 There is no automatic provider fallback.
 
+Set `thinking_control: true` on a profile to add a Thinking choice under the model
+picker (it needs `model_picker: true`). Readers pick Model default, or a level the
+selected model's protocol can express, sent in that protocol's own terms:
+
+| Protocol | Levels | Sent as |
+|---|---|---|
+| `chat` | Off, Low, Medium, High | `thinking: {type: disabled}`, or `{type: enabled}` with `reasoning_effort` |
+| `responses` | Low, Medium, High | `reasoning: {effort}` |
+| `anthropic` | Off, Low, Medium, High | `thinking` with a 1,024 / 4,096 / 16,384-token budget |
+| `gemini` | Off, Low, Medium, High | `thinkingConfig.thinkingBudget`, the same budgets |
+| `ollama` | Off, On | `think` |
+
+A budget is added to the request's output limit, so thinking doesn't eat into the
+answer. Planning and suggestion requests on such a profile always use its least
+thinking. Only enable it for models that accept these fields; a provider that
+rejects them fails the request.
+
 Set `chat_mode: true` to add a Chat entry beside General in the category row. It
 turns the results page into a full-width conversation with the AI Summary, and a
 search ending in `??` opens straight into it. It is off by default.
