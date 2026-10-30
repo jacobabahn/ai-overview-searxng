@@ -106,7 +106,11 @@ in the background. Restoring a different saved model still waits for validation.
 With `model_picker: false` (the default), the configured default profile is used.
 There is no automatic provider fallback.
 
-In Chat mode, each completed answer offers up to three suggested next questions.
+Set `chat_mode: true` to add a Chat entry beside General in the category row. It
+turns the results page into a full-width conversation with the AI Summary, and a
+search ending in `??` opens straight into it. It is off by default.
+
+In chat mode, each completed answer offers up to three suggested next questions.
 They come from one small extra request to the same profile, which sees only the
 conversation and that turn's search snippets, and use `planning_max_output_tokens`.
 Set `follow_up_suggestions: false` to skip that request.

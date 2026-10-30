@@ -1,5 +1,6 @@
 default_profile: fixture
 model_picker: true
+chat_mode: true
 profiles:
   fixture:
     backend: local
