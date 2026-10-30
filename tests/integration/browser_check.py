@@ -84,7 +84,7 @@ def main() -> None:
         expect(picker).to_be_enabled()
         target = picker.locator("option", has_text="go-fixture / glm-5.2").get_attribute("value")
         assert target is not None
-        expect(panel.get_by_role("button", name="Close settings")).to_be_focused()
+        expect(panel.locator(".ai-options")).to_be_focused()
         expect(panel.locator(".ai-apply-model")).to_be_hidden()
         picker.select_option(target)
         expect(panel.locator(".ai-regenerate")).to_be_hidden()
@@ -105,7 +105,7 @@ def main() -> None:
         panel.get_by_role("button", name="Summary settings").click()
         picker.select_option(target)
         expect(panel.locator(".ai-answer")).to_have_count(2)
-        panel.get_by_role("button", name="Use model and restart", exact=True).click()
+        panel.get_by_role("button", name="Apply and regenerate", exact=True).click()
         expect(panel.locator(".ai-answer")).to_have_count(1)
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
@@ -116,19 +116,22 @@ def main() -> None:
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
         # The model's thinking levels: choosing one restarts with it, and it is remembered.
         panel.get_by_role("button", name="Summary settings").click()
-        thinking = panel.get_by_role("combobox", name="Thinking")
-        expect(thinking.locator("option")).to_have_text(
-            ["Model default", "Off", "Low", "Medium", "High"]
-        )
-        thinking.select_option("off")
+        thinking = panel.get_by_role("group", name="Thinking")
+        expect(thinking.locator("label")).to_have_text(["Default", "Off", "Low", "Medium", "High"])
+        expect(thinking.get_by_role("radio", name="Default")).to_be_checked()
+        thinking.get_by_role("radio", name="Off").check()
         with page.expect_request(lambda request: request.url.endswith("/select")) as chosen:
-            panel.get_by_role("button", name="Apply and restart", exact=True).click()
+            panel.get_by_role("button", name="Apply and regenerate", exact=True).click()
         assert json.loads(chosen.value.post_data or "{}")["thinking"] == "off"
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.locator(".ai-current-model")).to_have_text("Current: glm-5.2, thinking off")
+        expect(panel.locator(".ai-current-model")).to_have_text(
+            "Answering with glm-5.2, thinking off."
+        )
         page.reload()
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-        expect(panel.locator(".ai-current-model")).to_have_text("Current: glm-5.2, thinking off")
+        expect(panel.locator(".ai-current-model")).to_have_text(
+            "Answering with glm-5.2, thinking off."
+        )
         page.screenshot(path=str(output / "overview-desktop.png"), full_page=True)
         panel.get_by_role("button", name="Collapse overview").click()
         expect(panel.locator(".ai-content")).to_be_hidden()
@@ -179,7 +182,7 @@ def main() -> None:
         other = picker.locator("option", has_text="fixture / fixture").get_attribute("value")
         assert other is not None
         picker.select_option(other)
-        panel.get_by_role("button", name="Use model and restart").click()
+        panel.get_by_role("button", name="Apply and regenerate").click()
         expect(panel.locator(".ai-model-status")).to_contain_text("temporarily unavailable")
         expect(panel.locator(".ai-options")).to_be_visible()
         expect(picker).to_have_value(other)
@@ -228,7 +231,7 @@ def main() -> None:
         assert target is not None
         picker.select_option(target)
         with page.expect_request(lambda request: request.url.endswith("/select")):
-            panel.get_by_role("button", name="Use model and restart").click()
+            panel.get_by_role("button", name="Apply and regenerate").click()
         expect(panel.get_by_role("button", name="Retry")).to_be_disabled()
         panel.locator(".ai-retry").evaluate(
             "button => button.dispatchEvent(new MouseEvent('click'))"

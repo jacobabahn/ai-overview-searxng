@@ -18,9 +18,12 @@
       <button type="button" class="ai-collapse" aria-label="Collapse overview" aria-expanded="true" title="Collapse overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
     </div>
   </header>
-  <div class="ai-options" id="ai-summary-settings" role="region" aria-label="Summary settings" hidden>
+  <div class="ai-options" id="ai-summary-settings" role="region" aria-label="Summary settings" tabindex="-1" hidden>
     <div class="ai-settings-heading">
-      <h3>Summary settings</h3>
+      <div class="ai-settings-title">
+        <h3>Summary settings</h3>
+        {% if model_picker %}<p class="ai-current-model">Answering with {{ model }}.</p>{% endif %}
+      </div>
       <button type="button" class="ai-settings-close" aria-label="Close settings" title="Close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </div>
     {% if model_picker %}
@@ -29,27 +32,25 @@
         <label for="ai-summary-model">Model</label>
         <button type="button" class="ai-refresh-models">Refresh list</button>
       </div>
-      <select class="ai-model" id="ai-summary-model" aria-label="Overview model" aria-describedby="ai-model-help" disabled>
-        <option>{{ profile }} / {{ model }}</option>
-      </select>
-      <div class="ai-thinking-settings" hidden>
-        <label for="ai-summary-thinking">Thinking</label>
-        <select class="ai-thinking" id="ai-summary-thinking" aria-describedby="ai-thinking-help">
-          <option value="">Model default</option>
+      <span class="ai-select">
+        <select class="ai-model" id="ai-summary-model" aria-label="Overview model" aria-describedby="ai-model-status" disabled>
+          <option>{{ profile }} / {{ model }}</option>
         </select>
+      </span>
+      <p id="ai-model-status" class="ai-model-status" role="status" aria-live="polite"></p>
+      <fieldset class="ai-thinking-settings" aria-describedby="ai-thinking-help" hidden>
+        <legend>Thinking</legend>
+        <div class="ai-thinking"></div>
         <p id="ai-thinking-help" class="ai-model-help">Less thinking answers sooner; more can help with harder questions.</p>
-      </div>
-      <p class="ai-current-model">Current: {{ model }}</p>
-      <p id="ai-model-help" class="ai-model-help">Changes apply when you restart. Your choices are remembered in this browser.</p>
-      <p class="ai-model-status" role="status" aria-live="polite"></p>
+      </fieldset>
     </div>
     {% endif %}
     <div class="ai-settings-footer">
-      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary and any follow-ups.</p>
       <button type="button" class="ai-regenerate" aria-describedby="ai-restart-help">Regenerate overview</button>
       {% if model_picker %}
-      <button type="button" class="ai-apply-model" aria-describedby="ai-restart-help" disabled hidden>Use model and restart</button>
+      <button type="button" class="ai-apply-model" aria-describedby="ai-restart-help" disabled hidden>Apply and regenerate</button>
       {% endif %}
+      <p class="ai-restart-help" id="ai-restart-help">Replaces this summary and any follow-ups.{% if model_picker %} Your choices are remembered in this browser.{% endif %}</p>
       <p class="ai-settings-busy" role="status" hidden>Wait for the answer to finish, or stop generating to restart.</p>
     </div>
   </div>
