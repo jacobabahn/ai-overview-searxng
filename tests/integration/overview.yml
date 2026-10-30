@@ -8,7 +8,7 @@ profiles:
     read_timeout_seconds: 10
   go-fixture:
     backend: opencode_go
-    model: deepseek-v4-flash
+    model: deepseek-v4.1-flash
     endpoint: http://provider:9876/v1/chat/completions
     api_key_env: FIXTURE_KEY
     discover_models: true

@@ -1,5 +1,6 @@
 """Public model choices and server-validated selection; never expose credentials."""
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -11,6 +12,8 @@ from .errors import OverviewError
 from .models import Conversation
 from .routing import go_root, model_protocol
 from .state import new_session
+
+log = logging.getLogger(__name__)
 
 FetchCatalog = Callable[[str, Profile], dict[str, Any]]
 
@@ -60,11 +63,22 @@ class ModelCatalog:
                     continue
                 try:
                     models = self._discover(name, profile)
-                    # Retain the operator's configured model when the catalog omits it.
+                    warning = None
+                    # Retain the operator's configured model when the catalog omits it,
+                    # but say so: a retired default otherwise fails as a generic error.
                     if not any(m.model == profile.model for m in models):
                         models = (default, *models)
-                    self._cache[name] = CachedModels(time.monotonic() + 300, models)
+                        warning = (
+                            f"{profile.model} is no longer in the {name} model list; "
+                            "update the configured model."
+                        )
+                        log.warning(
+                            "Configured model %s for %s is not in the catalog", profile.model, name
+                        )
+                    self._cache[name] = CachedModels(time.monotonic() + 300, models, warning)
                     choices.extend(models)
+                    if warning:
+                        warnings.append(warning)
                 except OverviewError:
                     models = cached.choices if cached else (default,)
                     choices.extend(models)

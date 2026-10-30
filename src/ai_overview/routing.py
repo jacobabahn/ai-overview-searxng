@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .errors import OverviewError
 from .providers.protocols import PROTOCOLS
@@ -26,34 +26,38 @@ DEFAULTS = {
 }
 
 
-# Protocol routing from https://opencode.ai/docs/go/#endpoints (2026-09-20).
+# Protocol routing from https://opencode.ai/docs/go/#endpoints (2026-10-29).
 # The live /models endpoint lists IDs but does not currently describe protocols.
-# Unknown IDs stay visible but disabled until configured with model_protocols.
+# Go translates between protocols, so this table only picks each model's native one.
 GO_PROTOCOLS = {
     **dict.fromkeys(
         [
             "glm-5.3-flash",
             "glm-5.3",
             "glm-5.2",
-            "glm-5.1",
+            "kimi-k3.1-pro",
             "kimi-k3",
             "kimi-k2.7-code",
-            "kimi-k2.6",
             "longcat-2.0",
             "deepseek-v4.1-flash",
             "deepseek-v4-pro",
-            "deepseek-v4-flash",
-            "deepseek-v4-flash-vision-exp",
+            "mimo-v2.6-flash",
+            "mimo-v2.6-pro",
             "mimo-v2.5",
             "mimo-v2.5-pro",
+            "minimax-m3.1-flash",
             "hy4-preview",
             "hy3",
+            "step-5-preview",
+            "beam-free",
+            "iceman-contributor-free",
         ],
         "chat",
     ),
     **dict.fromkeys(
         [
-            "grok-4.6",
+            "grok-4.7",
+            "gpt-6-luna",
             "gpt-5.6-luna",
             "muse-spark-1.3-contributor",
             "muse-spark-1.2-contributor",
@@ -62,18 +66,19 @@ GO_PROTOCOLS = {
     ),
     **dict.fromkeys(
         [
+            "claude-haiku-5-5",
             "minimax-m3",
-            "minimax-m2.7",
-            "minimax-m2.5",
             "qwen3.8-max",
             "qwen3.8-flash",
-            "qwen3.7-max",
             "qwen3.7-plus",
-            "qwen3.6-plus",
         ],
         "anthropic",
     ),
 }
+# IDs missing from the table use Messages. In a 2026-10-29 check every catalog
+# model answered cleanly there, while Chat Completions leaked minimax-m3's
+# <think> reasoning into the answer text.
+GO_FALLBACK = "anthropic"
 SUFFIXES = {name: p.go_suffix for name, p in PROTOCOLS.items() if p.go_suffix}
 
 
@@ -114,7 +119,7 @@ def go_endpoint(endpoint: str, protocol: str) -> str:
     return go_root(endpoint) + SUFFIXES[protocol]
 
 
-def model_protocol(profile: Profile, model: str) -> Optional[str]:
+def model_protocol(profile: Profile, model: str) -> str:
     if model == profile.model:
         return profile.protocol
-    return profile.model_protocols.get(model, GO_PROTOCOLS.get(model))
+    return profile.model_protocols.get(model, GO_PROTOCOLS.get(model, GO_FALLBACK))

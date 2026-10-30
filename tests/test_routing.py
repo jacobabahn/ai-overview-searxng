@@ -11,7 +11,7 @@ def profile() -> Profile:
     return Config.from_dict(
         {
             "default_profile": "go",
-            "profiles": {"go": {"backend": "opencode_go", "model": "deepseek-v4-flash"}},
+            "profiles": {"go": {"backend": "opencode_go", "model": "deepseek-v4.1-flash"}},
         }
     ).profiles["go"]
 
@@ -58,11 +58,11 @@ def test_initial_and_selected_go_models_share_endpoint_rules(protocol: str, suff
     assert selected_profile(custom, state).endpoint == f"https://proxy.example/go/{suffix}"
 
 
-def test_routing_prefers_operator_overrides_and_leaves_unknown_models_unavailable() -> None:
+def test_routing_prefers_operator_overrides_and_sends_unknown_models_to_messages() -> None:
     p = replace(profile(), model_protocols={"custom": "anthropic", "glm-5.2": "responses"})
     assert model_protocol(p, "custom") == "anthropic"
     assert model_protocol(p, "glm-5.2") == "responses"
-    assert model_protocol(p, "unknown") is None
+    assert model_protocol(p, "unknown") == "anthropic"
     assert model_protocol(p, p.model) == p.protocol
 
 

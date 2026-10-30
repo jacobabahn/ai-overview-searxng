@@ -109,7 +109,9 @@ def main() -> None:
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
         expect(picker).to_be_hidden()
-        expect(picker.locator("option", has_text="unknown-model")).to_have_attribute("disabled", "")
+        expect(picker.locator("option", has_text="unknown-model")).not_to_have_attribute(
+            "disabled", ""
+        )
         page.reload()
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(picker.locator("option:checked")).to_have_text("go-fixture / glm-5.2")
