@@ -13,7 +13,7 @@ from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
 from ai_overview.evidence import build_sources
 from ai_overview.models import Event, SearchOptions, Source
-from ai_overview.service import GenerationService
+from ai_overview.service import SUGGEST_PROMPT, GenerationService
 from ai_overview.state import StateSigner, initial_state
 from ai_overview.web import register, render_panel
 
@@ -167,6 +167,27 @@ def test_shell_escapes_content_and_uses_external_assets() -> None:
     assert "<img onerror=" not in shell
     assert 'type="module" src=' in shell
     assert "/ai-overview/static/overview.css" in shell
+
+
+def test_chat_mode_is_opt_in() -> None:
+    def shell(**settings: Any) -> str:
+        service, _, _ = make_service([], **settings)
+        app = Flask(__name__)
+        register(app, service)
+        with app.test_request_context():
+            return str(render_panel(service, initial_state("q?", (), "test")))
+
+    off = shell()
+    assert "chat-mode.css" not in off
+    assert "data-chat-mode" not in off
+    assert "data-suggest-endpoint" not in off
+    on = shell(chat_mode=True)
+    assert "/ai-overview/static/chat-mode.css" in on
+    assert 'data-chat-mode="true"' in on
+    assert 'data-suggest-endpoint="/ai-overview/suggest"' in on
+    assert "data-suggest-endpoint" not in shell(chat_mode=True, follow_up_suggestions=False)
+    with pytest.raises(ValueError, match="chat_mode must be a boolean"):
+        make_service([], chat_mode="yes")
 
 
 @pytest.mark.parametrize(
@@ -464,9 +485,12 @@ def test_suggestions_come_from_the_latest_turn_and_are_bounded() -> None:
     continuation = service.signer.loads(done.data["token"])
     # Asked questions, duplicates, non-strings, and extras are dropped; whitespace collapses.
     assert service.suggest(continuation) == ("Why is it blue?", "Third?", "Fourth?")
-    context = json.loads(transport.calls[-1]["messages"][-1]["content"])
-    assert context["questions"] == ["initial?"]
-    assert context["snippets"] == [{"title": "a.com", "snippet": "Evidence"}]
+    # The request repeats the answer's conversation word for word, so providers can
+    # reuse its cached prefix, and asks for suggestions only at the end.
+    answered, suggested = transport.calls[0]["messages"], transport.calls[-1]["messages"]
+    assert suggested[: len(answered)] == answered
+    assert suggested[len(answered)] == {"role": "assistant", "content": "First [1]"}
+    assert suggested[-1] == {"role": "user", "content": SUGGEST_PROMPT}
     assert service.suggest(continuation) == ()
 
 
@@ -481,9 +505,12 @@ def test_suggestions_stop_at_the_turn_limit() -> None:
 
 
 def test_suggest_endpoint_validates_state_and_can_be_disabled() -> None:
-    for enabled in (True, False):
+    for chat, suggestions in ((True, True), (True, False), (False, True)):
+        enabled = chat and suggestions
         service, _, _ = make_service(
-            ["First [1]", '{"questions": ["Next?"]}'], follow_up_suggestions=enabled
+            ["First [1]", '{"questions": ["Next?"]}'],
+            chat_mode=chat,
+            follow_up_suggestions=suggestions,
         )
         app = Flask(__name__)
         register(app, service)

@@ -10,6 +10,7 @@ const HISTORY_KEY = "aiOverviewChat";
 const ICON = '<svg viewBox="0 0 512 512" class="ionicon sxng-icon-set-big" aria-hidden="true"><path d="M87.48 380c1.2-4.38-1.43-10.47-3.94-14.86a42.63 42.63 0 0 0-2.54-3.8 199.81 199.81 0 0 1-33-110C47.64 139.09 140.72 48 255.82 48 356.2 48 440 117.54 459.57 209.85a199 199 0 0 1 4.43 41.64c0 112.41-89.49 204.93-204.59 204.93-18.31 0-43-4.6-56.47-8.37s-26.92-8.77-30.39-10.11a31.14 31.14 0 0 0-11.13-2.07 30.7 30.7 0 0 0-12.08 2.43L81.5 467.23a16.48 16.48 0 0 1-4.78 1.26 9.81 9.81 0 0 1-9.75-9.85 16.17 16.17 0 0 1 .6-3.33Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32px"/></svg>';
 
 const SEND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';
+const MAX_NOTES = 4;
 const inactive = {update() {}};
 
 // `expand(value)` sets the panel's disclosure; `focusComposer()` moves focus to
@@ -17,7 +18,8 @@ const inactive = {update() {}};
 // resolves to next questions for the latest answer, and `ask(question)` sends one.
 export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   const row = document.getElementById("categories_container");
-  if (!row || document.getElementById("ai-chat-tab")) return inactive;
+  // Opt-in: the operator enables chat mode with `chat_mode: true`.
+  if (panel.dataset.chatMode !== "true" || !row || document.getElementById("ai-chat-tab")) return inactive;
   const root = document.documentElement;
   const content = panel.querySelector(".ai-content");
   const collapse = panel.querySelector(".ai-collapse");
@@ -27,7 +29,6 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   tab.type = "button";
   tab.id = "ai-chat-tab";
   tab.className = "category category_button";
-  tab.hidden = true;
   tab.setAttribute("aria-pressed", "false");
   tab.innerHTML = `${ICON}<div class="category_name">chat</div>`;
   const general = row.querySelector('button[name="category_general"]');
@@ -37,7 +38,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   // Wide screens show each turn's sources open in a margin beside its answer.
   const wide = window.matchMedia("(min-width: 64rem)");
   const typed = document.querySelector("#q")?.defaultValue.trim() || "";
-  // A search ending in "??" opens chat mode as soon as follow-ups are possible.
+  // A search ending in "??" opens straight into chat mode.
   let openWhenReady = /\?\?$/.test(typed);
   const query = typed.replace(/\?{2,}$/, "?");
   function annotate() {
@@ -62,10 +63,57 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
         details.open = false;
         delete details.dataset.chatOpened;
       }
+      // The margin shows one line of each snippet; the whole of it is a hover away.
+      details.querySelectorAll("li p:not([title])").forEach(snippet => (snippet.title = snippet.textContent));
+      const turn = details.closest("article");
+      if (details.open) fold(details, turn);
     }
   }
+  // The margin keeps the first four sources an answer cites and folds the rest, so a
+  // long source list does not push the next question far down. It folds from the start
+  // and refolds as an answer streams, so notes only ever appear as they are cited.
+  function fold(details, turn) {
+    const citations = [...turn.querySelectorAll(".ai-answer a[data-source-id]")].map(link => link.dataset.sourceId);
+    const kept = new Set([...new Set(citations)].slice(0, MAX_NOTES));
+    const items = [...details.querySelectorAll("li")];
+    const extra = items.filter(item => !kept.has(item.dataset.sourceId));
+    // A single leftover note takes no more room than the control that would fold it.
+    const folding = extra.length >= 2;
+    items.forEach(item => item.classList.toggle("ai-chat-extra", folding && extra.includes(item)));
+    let more = details.querySelector(".ai-chat-more");
+    if (!folding) {
+      more?.remove();
+      details.removeAttribute("data-chat-expanded");
+      return;
+    }
+    if (!more) {
+      more = document.createElement("button");
+      more.type = "button";
+      more.className = "ai-chat-more";
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", () => {
+        const expanded = more.getAttribute("aria-expanded") !== "true";
+        more.setAttribute("aria-expanded", String(expanded));
+        details.toggleAttribute("data-chat-expanded", expanded);
+        label(more);
+      });
+      details.querySelector("ol").after(more);
+    }
+    more.dataset.count = extra.length;
+    more.dataset.shown = kept.size;
+    label(more);
+  }
+  function label(more) {
+    const count = Number(more.dataset.count);
+    const sources = count === 1 ? "source" : "sources";
+    if (more.getAttribute("aria-expanded") === "true") more.textContent = "Fewer sources";
+    else more.textContent = Number(more.dataset.shown) ? `${count} more ${sources}` : `Show ${count} ${sources}`;
+  }
   function unannotate() {
-    turns.querySelectorAll(".ai-chat-query").forEach(heading => heading.remove());
+    turns.querySelectorAll(".ai-chat-query, .ai-chat-more").forEach(element => element.remove());
+    turns.querySelectorAll(".ai-chat-extra").forEach(item => item.classList.remove("ai-chat-extra"));
+    turns.querySelectorAll(".ai-sources li p[title]").forEach(snippet => snippet.removeAttribute("title"));
+    turns.querySelectorAll(".ai-sources[data-chat-expanded]").forEach(details => details.removeAttribute("data-chat-expanded"));
     turns.querySelectorAll(".ai-sources[data-chat-opened]").forEach(details => {
       details.open = false;
       delete details.dataset.chatOpened;
@@ -97,6 +145,13 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   turns.addEventListener("pointerover", event => cite(citation(event)));
   turns.addEventListener("focusin", event => cite(citation(event)));
   turns.addEventListener("pointerleave", () => cite(null));
+  // Following a citation to a folded note unfolds its list first, so the note can take focus.
+  turns.addEventListener("click", event => {
+    const link = event.target.closest?.(".ai-answer a[data-source-id]");
+    const note = link?.closest("article")?.querySelector(`.ai-sources li.ai-chat-extra[data-source-id="${link.dataset.sourceId}"]`);
+    const more = note?.closest("details").querySelector(".ai-chat-more[aria-expanded='false']");
+    more?.click();
+  }, true);
 
   // Suggested next questions sit between the latest answer and the composer, set
   // like the thread's own questions so they read as the turn that could come next.
@@ -140,7 +195,11 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
     suggestions.hidden = !questions.length;
   }
 
-  let available = false;
+  // Chat mode can open while the first answer streams; sending a follow-up and
+  // suggestions wait until the conversation can continue.
+  let canFollowUp = false;
+  let refolding = false;
+  let focusWhenReady = false;
   let busy = false;
   let saved = null;
   let chatScroll = 0;
@@ -156,7 +215,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   }
 
   function enter({fromHistory = false} = {}) {
-    if (active() || !available) return;
+    if (active()) return;
     saved = {
       scroll: window.scrollY,
       selected: [...row.querySelectorAll(".selected")],
@@ -165,6 +224,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
       turns: turns.childElementCount,
     };
     if (!fromHistory) {
+      focusWhenReady = !canFollowUp || busy;
       history.pushState({...history.state, [HISTORY_KEY]: true}, "");
       // The chat entry restores its own scroll position: the host theme scrolls
       // smoothly, and the browser's restoration would glide across the reflow.
@@ -179,7 +239,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
       if (content.hidden) collapse.click();
       expand(true);
       annotate();
-      if (available && !busy) offerSuggestions();
+      if (canFollowUp && !busy) offerSuggestions();
       // Forward returns to where the thread was left; a fresh entry starts at its top.
       window.scrollTo({top: fromHistory ? chatScroll : 0, behavior: "instant"});
       if (!fromHistory) focusComposer();
@@ -190,6 +250,7 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
     if (!active()) return;
     const previous = saved;
     saved = null;
+    focusWhenReady = false;
     chatScroll = window.scrollY;
     swap(() => {
       tab.classList.remove("selected");
@@ -202,7 +263,6 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
       const unchanged = turns.childElementCount === previous.turns;
       expand(unchanged ? previous.expanded : true);
       if (unchanged && previous.collapsed && !content.hidden) collapse.click();
-      tab.hidden = !available;
       window.scrollTo({top: previous.scroll, behavior: "instant"});
     });
     if (!fromHistory && history.state?.[HISTORY_KEY]) history.back();
@@ -237,14 +297,28 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
 
   return {
     update(state) {
-      available = state.canFollowUp;
+      canFollowUp = state.canFollowUp;
       busy = state.busy;
-      tab.hidden = !available && !active();
-      if (busy || !available) clearSuggestions();
-      else if (openWhenReady && !active()) {
+      if (openWhenReady) {
         openWhenReady = false;
         enter();
-      } else offerSuggestions();
+      }
+      if (!busy) annotate();
+      // While an answer streams, refold its notes once the new text is on the page.
+      else if (!refolding) {
+        refolding = true;
+        requestAnimationFrame(() => {
+          refolding = false;
+          annotate();
+        });
+      }
+      if (busy || !canFollowUp) clearSuggestions();
+      else offerSuggestions();
+      // Entered before the answer finished: the composer takes focus once it appears.
+      if (focusWhenReady && canFollowUp && !busy) {
+        focusWhenReady = false;
+        if (active() && [document.body, tab].includes(document.activeElement)) focusComposer();
+      }
     },
   };
 }

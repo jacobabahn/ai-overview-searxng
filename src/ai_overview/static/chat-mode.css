@@ -37,7 +37,7 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
   margin: 0 0 0.75rem; padding: 0; border: 0;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.ai-overview .ai-chat-query { display: none; }
+.ai-overview :is(.ai-chat-query, .ai-chat-more) { display: none; }
 .ai-overview[data-chat="true"] .ai-chat-query { display: block; }
 .ai-overview[data-chat="true"] .ai-question { font-size: var(--ai-chat-follow-up); margin-block-end: 0.5rem; }
 .ai-overview[data-chat="true"] .ai-turns > article + article { padding-block-start: var(--ai-chat-turn-gap); }
@@ -89,14 +89,12 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
   .ai-overview[data-chat="true"] .ai-sources[open] summary { border-end-start-radius: 0; border-end-end-radius: 0; }
 }
 
-/* The composer is the next search: a follow-up may search again, so it wears the
-   host's search box (surface, radius, shadow) and docks at the bottom of the
-   viewport, where the thread fades out behind it. */
+/* The composer (styled as the host's search box in overview.css) docks at the
+   bottom of the viewport, where the thread fades out behind it. */
 .ai-overview[data-chat="true"] .ai-follow-up {
   --ai-chat-dock: max(1rem, env(safe-area-inset-bottom));
   position: sticky; inset-block-end: var(--ai-chat-dock); z-index: 1;
-  align-items: flex-end; gap: 0.5rem; margin-block-start: 2rem;
-  padding: 0.5rem 0.5rem 0.5rem 0.875rem; border: 0; background: transparent;
+  margin-block-start: 2rem; border: 0; background: transparent; box-shadow: none;
 }
 /* Layers inside the composer: the fade behind it, then its search-box surface. */
 .ai-overview[data-chat="true"] .ai-follow-up::before,
@@ -112,22 +110,6 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
 }
 .ai-overview[data-chat="true"] .ai-follow-up:focus-within::after {
   border-color: color-mix(in srgb, var(--ai-link) 45%, transparent);
-}
-.ai-overview[data-chat="true"] .ai-follow-up textarea { min-height: 2.25rem; padding: 0.375rem 0; }
-.ai-overview[data-chat="true"] .ai-follow-up button {
-  width: 2.25rem; height: 2.25rem; min-width: 2.25rem; min-height: 2.25rem; color: var(--ai-muted);
-}
-/* Ready to send, and stopping an answer, are filled; an empty composer stays quiet. */
-.ai-overview[data-chat="true"] .ai-follow-up:not([data-busy="true"]) button:enabled { color: var(--ai-bg); background: var(--ai-link); }
-.ai-overview[data-chat="true"] .ai-follow-up:not([data-busy="true"]) button:enabled:hover { background: color-mix(in srgb, var(--ai-link) 85%, var(--ai-text)); }
-.ai-overview[data-chat="true"] .ai-follow-up[data-busy="true"] button { color: var(--ai-bg); background: var(--ai-text); }
-.ai-overview[data-chat="true"] .ai-follow-up[data-busy="true"] .ai-stop-icon { width: 0.875rem; height: 0.875rem; }
-.ai-overview[data-chat="true"] .ai-follow-up button:focus-visible { outline-offset: 2px; }
-@media (hover: none) {
-  .ai-overview[data-chat="true"] .ai-follow-up button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .ai-overview[data-chat="true"] .ai-follow-up button { transition: background-color 120ms ease-out, color 120ms ease-out; }
 }
 
 /* Wide screens: an annotated page. The answer keeps a reading measure and each
@@ -170,18 +152,27 @@ html[data-ai-chat] #answers:has(.ai-overview) > .answer + .answer { margin-block
   .ai-overview[data-chat="true"] .ai-sources small { font-size: 0.75rem; }
   .ai-overview[data-chat="true"] .ai-sources ol { margin: 0; padding-inline-start: 1.25rem; }
   .ai-overview[data-chat="true"] .ai-sources li {
-    margin: 0 0 0.25rem -0.5rem; padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    margin: 0 0 0.125rem -0.5rem; padding: 0.375rem 0.5rem 0.375rem 0.75rem;
     border-radius: 0.4rem; line-height: 1.45;
   }
   .ai-overview[data-chat="true"] .ai-sources li a { font-weight: 600; text-decoration: none; }
   .ai-overview[data-chat="true"] .ai-sources li a:hover { text-decoration: underline; }
   .ai-overview[data-chat="true"] .ai-sources li p {
     margin: 0.25rem 0 0; color: var(--ai-muted);
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
   }
-  /* A citation being read, pointed at, or focused lights up its margin note. */
+  /* Uncited sources fold behind a "more sources" control. */
+  .ai-overview[data-chat="true"] .ai-sources:not([data-chat-expanded]) li.ai-chat-extra { display: none; }
+  .ai-overview[data-chat="true"] .ai-sources .ai-chat-more {
+    display: inline-flex; align-items: center; min-height: 2rem; margin: 0.25rem 0 0 0.75rem;
+    padding: 0.25rem 0.5rem; border: 0; font-size: inherit; color: var(--ai-link); background: transparent;
+  }
+  .ai-overview[data-chat="true"] .ai-sources .ai-chat-more:enabled:hover { background: var(--ai-tint); }
+  /* A citation being read, pointed at, or focused lights up its margin note. Only a
+     followed citation opens the full snippet: pointing never changes the margin's
+     height, so the turns below hold still. */
   .ai-overview[data-chat="true"] .ai-sources li:is(.ai-chat-cited, :focus) { background: var(--ai-tint); }
-  .ai-overview[data-chat="true"] .ai-sources li:is(.ai-chat-cited, :focus) p { -webkit-line-clamp: unset; }
+  .ai-overview[data-chat="true"] .ai-sources li:focus p { -webkit-line-clamp: unset; }
   .ai-overview[data-chat="true"] .ai-answer a[data-source-id].ai-chat-cited {
     color: var(--ai-bg); background: var(--ai-link);
   }

@@ -427,7 +427,8 @@ def check_chat_mode(page: Page, output: Path) -> None:
     composer = panel.get_by_role("textbox", name="Ask a follow-up")
     results = page.locator("#urls")
     page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
-    expect(tab).to_be_visible(timeout=20000)
+    expect(tab).to_be_visible()
+    expect(panel.locator(".ai-follow-up")).to_be_visible(timeout=20000)
     expect(tab).to_have_attribute("type", "button")
     expect(tab).to_have_attribute("aria-pressed", "false")
     expect(tab.locator(".category_name")).to_have_text("chat")
@@ -543,10 +544,95 @@ def check_chat_mode(page: Page, output: Path) -> None:
     expect(tab).to_have_attribute("aria-pressed", "true", timeout=20000)
     expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
     expect(results).to_be_hidden()
-    # Not offered while a first answer streams.
+    # Beside a finished answer, the margin keeps four cited notes and folds the rest;
+    # following a folded citation unfolds the list and focuses its note.
+    page.set_viewport_size({"width": 1280, "height": 900})
+    sources = [
+        {"id": i, "url": f"https://example.org/{i}", "title": f"Source {i}", "snippet": "Evidence."}
+        for i in range(1, 9)
+    ]
+    folded = "".join(
+        f"event: {name}\ndata: {json.dumps(data)}\n\n"
+        for name, data in [
+            ("sources", {"sources": sources}),
+            ("text_delta", {"text": "Blue [1]. Red [2]. Violet [3]. Dust [4]. Eyes [6]."}),
+            ("done", {"token": "fixture", "can_follow_up": True}),
+        ]
+    )
+    page.route(
+        "**/ai-overview/stream",
+        lambda route: route.fulfill(content_type="text/event-stream", body=folded),
+    )
+    page.goto("http://127.0.0.1:8899/search?q=folded+sources%3F")
+    expect(tab).to_be_visible(timeout=20000)
+    tab.click()
+    notes = panel.locator(".ai-sources li")
+    expect(panel.locator(".ai-chat-more")).to_have_text("4 more sources")
+    expect(notes.filter(visible=True)).to_have_count(4)
+    # Pointing at a citation or a note highlights it without resizing the margin.
+    margin = panel.locator(".ai-sources").first
+    height = margin.evaluate("element => element.offsetHeight")
+    panel.locator('.ai-answer a[data-source-id="6"]').hover()
+    notes.first.hover()
+    expect(notes.filter(visible=True)).to_have_count(4)
+    assert margin.evaluate("element => element.offsetHeight") == height, (
+        "hovering resized the source margin"
+    )
+    panel.locator('.ai-answer a[data-source-id="6"]').click()
+    expect(panel.locator(".ai-chat-more")).to_have_text("Fewer sources")
+    expect(notes.filter(visible=True)).to_have_count(8)
+    expect(panel.locator('.ai-sources li[data-source-id="6"]')).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(panel.locator(".ai-chat-more")).to_have_count(0)
+    page.unroute("**/ai-overview/stream")
+    # Notes fold from the start and appear as the streaming answer first cites them,
+    # so finishing the answer never collapses the margin.
+    page.add_init_script(
+        """
+        if (location.search.includes("live+fold")) {
+          const original = window.fetch;
+          window.fetch = (input, init) => {
+            if (!String(input.url ?? input).endsWith("/stream")) return original(input, init);
+            const encoder = new TextEncoder();
+            const event = (name, data) => encoder.encode(`event: ${name}\\ndata: ${JSON.stringify(data)}\\n\\n`);
+            const sources = Array.from({length: 8}, (_, i) => ({
+              id: i + 1, url: `https://example.org/${i + 1}`, title: `Source ${i + 1}`, snippet: "Evidence."}));
+            const body = new ReadableStream({async start(controller) {
+              controller.enqueue(event("sources", {sources}));
+              await new Promise(resolve => (window.continueStream = resolve));
+              controller.enqueue(event("text_delta", {text: "Eyes [6]."}));
+              await new Promise(resolve => (window.continueStream = resolve));
+              controller.enqueue(event("text_delta", {text: " Blue [1]. Red [2]. Violet [3]. Dust [4]."}));
+              controller.enqueue(event("done", {token: "fixture", can_follow_up: true}));
+              controller.close();
+            }});
+            return Promise.resolve(new Response(body, {headers: {"Content-Type": "text/event-stream"}}));
+          };
+        }
+        """
+    )
+    page.goto("http://127.0.0.1:8899/search?q=live+fold%3F%3F")
+    expect(tab).to_have_attribute("aria-pressed", "true", timeout=20000)
+    expect(panel.locator(".ai-chat-more")).to_have_text("Show 8 sources")
+    expect(notes.filter(visible=True)).to_have_count(0)
+    page.evaluate("window.continueStream()")
+    expect(panel.locator(".ai-chat-more")).to_have_text("7 more sources")
+    expect(notes.filter(visible=True)).to_have_count(1)
+    page.evaluate("window.continueStream()")
+    expect(panel.locator(".ai-follow-up")).to_be_visible()
+    # The first four cited, in citation order: [4] is the fifth and stays folded.
+    expect(panel.locator(".ai-chat-more")).to_have_text("4 more sources")
+    expect(notes.filter(visible=True)).to_have_count(4)
+    expect(panel.locator('.ai-sources li[data-source-id="4"]')).to_be_hidden()
+    expect(panel.locator('.ai-sources li[data-source-id="6"]')).to_be_visible()
+    # Offered while the first answer streams: the answer streams full-width, and the
+    # composer appears once the conversation can continue.
     page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
+    expect(tab).to_be_visible()
     expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
-    expect(tab).to_be_hidden()
+    tab.click()
+    expect(page.locator("html[data-ai-chat]")).to_have_count(1)
+    expect(panel.locator(".ai-follow-up")).to_be_hidden()
     page.get_by_role("button", name="Stop generating", exact=True).click()
 
 

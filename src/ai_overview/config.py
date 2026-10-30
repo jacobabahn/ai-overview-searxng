@@ -43,6 +43,7 @@ class Config:
     token_ttl_seconds: int = 1800
     max_concurrent: int = 2
     model_picker: bool = False
+    chat_mode: bool = False
     follow_up_suggestions: bool = True
     answer_cache_entries: int = 256
     answer_cache_ttl_seconds: int = 1800
@@ -173,7 +174,7 @@ class Config:
             raise ValueError("default_profile must name a configured profile")
         other = {k: v for k, v in data.items() if k not in {"default_profile", "profiles"}}
         for k, v in other.items():
-            if k in {"model_picker", "follow_up_suggestions"}:
+            if k in {"model_picker", "chat_mode", "follow_up_suggestions"}:
                 if type(v) is not bool:
                     raise ValueError(f"{k} must be a boolean")
             else:
