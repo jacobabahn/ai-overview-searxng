@@ -45,7 +45,7 @@ profiles:
 
   opencode:
     backend: opencode_go
-    model: deepseek-v4-flash
+    model: deepseek-v4.1-flash
     api_key_env: OPENCODE_GO_API_KEY
     discover_models: true
     # Optional for models/gateways supporting DeepSeek's chat thinking control:

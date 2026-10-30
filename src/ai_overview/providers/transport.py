@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -11,10 +12,14 @@ from ..errors import OverviewError
 
 USER_AGENT = f"searxng-ai-overview/{__version__}"
 
+log = logging.getLogger(__name__)
 
-def check_status(status: int) -> None:
+
+def check_status(status: int, body: Iterable[bytes] = ()) -> None:
     if 200 <= status < 300:
         return
+    # Users see a generic message; operators need the provider's reason.
+    log.warning("Provider returned HTTP %s: %s", status, error_detail(body))
     if status in {401, 403}:
         raise OverviewError(
             "provider_auth", "The provider rejected access. Check its configuration."
@@ -24,6 +29,26 @@ def check_status(status: int) -> None:
             "provider_limit", "The provider is busy or its usage limit was reached."
         )
     raise OverviewError("provider_error", "The provider could not complete this request.")
+
+
+def error_detail(body: Iterable[bytes], limit: int = 4096) -> str:
+    data = bytearray()
+    try:
+        for chunk in body:
+            data.extend(chunk)
+            if len(data) >= limit:
+                break
+    except Exception:
+        pass
+    text = bytes(data[:limit]).decode(errors="replace")
+    try:
+        error = json.loads(text).get("error")
+        message = error.get("message") if isinstance(error, dict) else error
+        if isinstance(message, str):
+            return message[:300]
+    except (ValueError, AttributeError):
+        pass
+    return " ".join(text.split())[:300] or "(no body)"
 
 
 def remaining(deadline: float) -> float:
@@ -108,7 +133,7 @@ class HTTPXTransport(_BaseTransport):
                 with client.stream(
                     method, url, headers=headers, **({"json": body} if body is not None else {})
                 ) as response:
-                    check_status(response.status_code)
+                    check_status(response.status_code, response.iter_bytes())
                     yield bounded(response.iter_bytes(), deadline)
         except httpx.TimeoutException:
             raise OverviewError(
@@ -149,7 +174,7 @@ class SearXNGTransport(_BaseTransport):
                 # Ask for identity so JSON/SSE arrive as readable application data.
                 accept_encoding="identity",
             )
-            check_status(response.status_code)
+            check_status(response.status_code, chunks)
             yield bounded(chunks, deadline)
         except OverviewError:
             raise

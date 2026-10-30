@@ -12,7 +12,7 @@ from ai_overview.models import Message
 from ai_overview.providers.adapter import Provider
 from ai_overview.providers.parsing import sse
 from ai_overview.providers.protocols import PROTOCOLS
-from ai_overview.providers.transport import HTTPXTransport
+from ai_overview.providers.transport import HTTPXTransport, check_status
 
 
 @dataclass
@@ -324,3 +324,12 @@ def test_configured_authorization_header_only_reaches_bearer_protocols(
     ).profiles["test"]
     _, headers, _ = Provider(p, RecordingTransport(b"")).request([], "session")
     assert headers.get("Authorization") == expected
+
+
+def test_rejected_request_logs_provider_reason(caplog: pytest.LogCaptureFixture) -> None:
+    body = [b'{"error":{"type":"server_error","message":"Model is unavailable."}}']
+    with pytest.raises(OverviewError) as caught:
+        check_status(400, body)
+    assert caught.value.code == "provider_error"
+    assert "Model is unavailable." not in caught.value.message
+    assert "HTTP 400: Model is unavailable." in caplog.text

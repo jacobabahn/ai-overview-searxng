@@ -79,7 +79,7 @@ def main() -> None:
         "profiles": {
             "opencode": {
                 "backend": "opencode_go",
-                "model": "deepseek-v4-flash",
+                "model": "deepseek-v4.1-flash",
                 "discover_models": True,
                 "api_key_env": "OPENCODE_GO_API_KEY",
                 "max_output_tokens": 4096,

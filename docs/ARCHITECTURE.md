@@ -102,8 +102,9 @@ Local inference never implicitly contacts a hosted model service.
 `model_picker: true` adds a selector. `discover_models: true` on a Go profile
 loads the public catalog through the same configured network without sending
 API keys. The catalog lacks protocol metadata, so use documented model-to-protocol
-mappings plus operator overrides. Unknown routes are disabled. Successful lists
-are cached per worker for five minutes; failed refreshes retain old/configured
+mappings plus operator overrides. Unmapped models use Messages, which Go translates
+for every model. A configured model missing from the catalog adds a warning.
+Successful lists are cached per worker for five minutes; failed refreshes retain old/configured
 choices with a warning and a short retry delay.
 
 `POST /ai-overview/models` and `/select` require signed search state and same-origin

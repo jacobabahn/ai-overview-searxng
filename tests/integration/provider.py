@@ -18,7 +18,7 @@ class Handler(BaseHTTPRequestHandler):
             json.dumps(
                 {
                     "data": [
-                        {"id": "deepseek-v4-flash"},
+                        {"id": "deepseek-v4.1-flash"},
                         {"id": "glm-5.2"},
                         {"id": "unknown-model"},
                     ]

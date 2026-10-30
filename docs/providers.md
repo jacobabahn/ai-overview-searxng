@@ -168,7 +168,7 @@ model_picker: true
 profiles:
   opencode:
     backend: opencode_go
-    model: deepseek-v4-flash
+    model: deepseek-v4.1-flash
     api_key_env: OPENCODE_GO_API_KEY
     discover_models: true
     max_output_tokens: 4096
@@ -177,9 +177,11 @@ profiles:
 
 Model IDs come from Go's public `/zen/go/v1/models` endpoint, fetched on the server
 and cached for five minutes. This catalog does not validate your key or guarantee
-account access. Protocol routing follows Go's documented endpoints; unknown IDs
-are shown disabled until configured through `model_protocols` (values: `chat`,
-`responses`, `anthropic`). A failed refresh retains saved/configured choices and
+account access. Known models use their documented native protocol. Go translates
+between protocols, so models missing from that table use Anthropic Messages and
+work as soon as Go lists them. Override any model through `model_protocols`
+(values: `chat`, `responses`, `anthropic`). If the configured `model` drops out of
+the catalog, the picker and server log say so. A failed refresh retains saved/configured choices and
 shows a message. The API key and endpoint configuration never reach the browser.
 
 The picker also includes other configured profiles. It remembers only the

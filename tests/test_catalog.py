@@ -23,7 +23,7 @@ def config(enabled: bool = True) -> Config:
             "profiles": {
                 "go": {
                     "backend": "opencode_go",
-                    "model": "deepseek-v4-flash",
+                    "model": "deepseek-v4.1-flash",
                     "discover_models": True,
                 }
             },
@@ -39,7 +39,7 @@ def test_discovery_is_cached_and_protocols_are_explicit() -> None:
         return {
             "data": [
                 {"id": m}
-                for m in ["deepseek-v4-flash", "gpt-5.6-luna", "minimax-m3", "new-unmapped-model"]
+                for m in ["deepseek-v4.1-flash", "gpt-5.6-luna", "minimax-m3", "new-unmapped-model"]
             ]
         }
 
@@ -48,10 +48,25 @@ def test_discovery_is_cached_and_protocols_are_explicit() -> None:
     assert catalog.list() == first
     assert calls == ["https://opencode.ai/zen/go/v1/models"]
     models = {c.model: c for c in first.choices}
-    assert models["deepseek-v4-flash"].protocol == "chat"
+    assert models["deepseek-v4.1-flash"].protocol == "chat"
     assert models["gpt-5.6-luna"].protocol == "responses"
     assert models["minimax-m3"].protocol == "anthropic"
-    assert not models["new-unmapped-model"].available
+    assert models["new-unmapped-model"].protocol == "anthropic"
+    assert models["new-unmapped-model"].available
+    assert first.warnings == ()
+
+
+def test_retired_configured_model_stays_selectable_with_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    catalog = ModelCatalog(config(), lambda url, profile: {"data": [{"id": "glm-5.3"}]})
+    result = catalog.list()
+    assert [c.model for c in result.choices] == ["deepseek-v4.1-flash", "glm-5.3"]
+    assert result.warnings == (
+        "deepseek-v4.1-flash is no longer in the go model list; update the configured model.",
+    )
+    assert catalog.list().warnings == result.warnings
+    assert "deepseek-v4.1-flash" in caplog.text
 
 
 def test_failed_discovery_preserves_configured_model() -> None:
@@ -63,7 +78,7 @@ def test_failed_discovery_preserves_configured_model() -> None:
 
     catalog = ModelCatalog(config(), fetch)
     result = catalog.list()
-    assert result.choices[0].model == "deepseek-v4-flash"
+    assert result.choices[0].model == "deepseek-v4.1-flash"
     assert result.warnings
     assert catalog.list() == result
     assert len(calls) == 1
@@ -73,17 +88,17 @@ def test_selection_requires_initial_state_and_known_model() -> None:
     c = config()
     catalog = ModelCatalog(c)
     initial = initial_state("q?", (), "go")
-    selected = catalog.select(initial, "go", "deepseek-v4-flash")
+    selected = catalog.select(initial, "go", "deepseek-v4.1-flash")
     assert selected.session != initial.session
-    assert selected.model == "deepseek-v4-flash"
+    assert selected.model == "deepseek-v4.1-flash"
     assert selected.query == initial.query
-    for profile_name, model in [("evil", "deepseek-v4-flash"), ("go", "unknown"), ([], "model")]:
+    for profile_name, model in [("evil", "deepseek-v4.1-flash"), ("go", "unknown"), ([], "model")]:
         with pytest.raises(OverviewError):
             catalog.select(initial, profile_name, model)
     with pytest.raises(OverviewError):
-        catalog.select(replace(initial, turns=(Turn("q", "a", ()),)), "go", "deepseek-v4-flash")
+        catalog.select(replace(initial, turns=(Turn("q", "a", ()),)), "go", "deepseek-v4.1-flash")
     with pytest.raises(OverviewError):
-        ModelCatalog(config(False)).select(initial, "go", "deepseek-v4-flash")
+        ModelCatalog(config(False)).select(initial, "go", "deepseek-v4.1-flash")
 
 
 def test_selection_endpoints_sign_model_without_exposing_keys(
@@ -103,11 +118,12 @@ def test_selection_endpoints_sign_model_without_exposing_keys(
     assert models.status_code == 200
     assert b"test-secret-value" not in models.data
     response = client.post(
-        "/ai-overview/select", json={"token": token, "profile": "go", "model": "deepseek-v4-flash"}
+        "/ai-overview/select",
+        json={"token": token, "profile": "go", "model": "deepseek-v4.1-flash"},
     )
     data = response.get_json()
     assert isinstance(data, dict)
-    assert signer.loads(data["token"]).model == "deepseek-v4-flash"
+    assert signer.loads(data["token"]).model == "deepseek-v4.1-flash"
     assert client.post("/ai-overview/models", json={"token": "bad"}).status_code == 403
     assert (
         client.post(
