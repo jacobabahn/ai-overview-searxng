@@ -12,6 +12,7 @@ from .errors import OverviewError
 from .models import Conversation
 from .routing import go_root, model_protocol
 from .state import new_session
+from .thinking import levels
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ class ModelChoice:
     model: str
     protocol: Optional[str]
     available: bool
+    # Thinking levels a reader may choose with this model, quickest first.
+    thinking_levels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +54,7 @@ class ModelCatalog:
         warnings: list[str] = []
         with self._lock:
             for name, profile in self.config.profiles.items():
-                default = ModelChoice(name, profile.model, profile.protocol, True)
+                default = ModelChoice(name, profile.model, profile.protocol, True, levels(profile))
                 if not profile.discover_models:
                     choices.append(default)
                     continue
@@ -102,12 +105,16 @@ class ModelCatalog:
             if not isinstance(model, str) or not model or len(model) > 200:
                 continue
             protocol = model_protocol(profile, model)
-            models[model] = ModelChoice(name, model, protocol, protocol is not None)
+            models[model] = ModelChoice(
+                name, model, protocol, protocol is not None, levels(profile, protocol)
+            )
         if not models:
             raise OverviewError("catalog", "The provider returned an empty model list.")
         return tuple(models[k] for k in sorted(models))
 
-    def select(self, state: Conversation, name: object, model: object) -> Conversation:
+    def select(
+        self, state: Conversation, name: object, model: object, thinking: object = None
+    ) -> Conversation:
         if not self.config.model_picker:
             raise OverviewError("invalid_request", "The model picker is disabled.")
         if state.turns:
@@ -127,10 +134,13 @@ class ModelCatalog:
         )
         if choice is None:
             raise OverviewError("invalid_request", "Choose an available model.")
+        if thinking is not None and thinking not in choice.thinking_levels:
+            raise OverviewError("invalid_request", "Choose a thinking level this model offers.")
         return replace(
             state,
             session=new_session(),
             profile=name,
             model=model,
             protocol=choice.protocol,
+            thinking=thinking,
         )

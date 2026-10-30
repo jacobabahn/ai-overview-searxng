@@ -16,6 +16,7 @@ from .providers.adapter import Provider
 from .providers.transport import Transport, remaining
 from .routing import selected_profile
 from .state import StateSigner
+from .thinking import quickest, with_thinking
 
 log = logging.getLogger(__name__)
 Retriever = Callable[[str, SearchOptions, float], tuple[Source, ...]]
@@ -116,6 +117,7 @@ class GenerationService:
         if bool(state.turns) != bool(question):
             raise OverviewError("invalid_request", "Run a search before asking a follow-up.")
         profile, state = self._pinned(state)
+        quick, _ = self._pinned(state, background=True)
         key = (
             _cache_key(profile, state, client)
             if self.cache and _cacheable(state, question, client)
@@ -127,7 +129,7 @@ class GenerationService:
         sources = state.sources
         if question:
             yield Event("status", {"message": "Preparing follow-up…"})
-            plan = self._plan(provider, state, question, deadline)
+            plan = self._plan(Provider(quick, self.transport), state, question, deadline)
             remaining(deadline)
             if plan.query:
                 yield Event("status", {"message": "Searching for sources…"})
@@ -151,9 +153,7 @@ class GenerationService:
             and profile.parallel_suggestions
             and len(state.turns) + 1 < self.config.max_turns
         ):
-            ahead = self.ahead.submit(
-                self._suggest_ahead, profile, state, current, sources, deadline
-            )
+            ahead = self.ahead.submit(self._suggest_ahead, quick, state, current, sources, deadline)
         yield Event("status", {"message": "Writing overview…"})
         output: list[str] = []
         remaining(deadline)
@@ -210,7 +210,7 @@ class GenerationService:
         """
         if len(state.turns) >= self.config.max_turns or self.config.max_turns < 2:
             return ()
-        profile, state = self._pinned(state)
+        profile, state = self._pinned(state, background=True)
         deadline = time.monotonic() + profile.timeout_seconds
         if not state.turns:
             if not profile.parallel_suggestions:
@@ -269,13 +269,18 @@ class GenerationService:
             stream.close()
         return _suggestions(text, asked)
 
-    def _pinned(self, state: Conversation) -> tuple[Profile, Conversation]:
+    def _pinned(
+        self, state: Conversation, background: bool = False
+    ) -> tuple[Profile, Conversation]:
+        """The profile for an answer, at the reader's thinking level, or for a short
+        background request (planning, suggestions), at its least thinking."""
         if state.profile not in self.config.profiles:
             raise OverviewError("configuration", "This model profile is no longer available.")
         profile = selected_profile(self.config.profiles[state.profile], state)
         # Pin even the default model on the first completed turn, so changing
         # server defaults cannot silently change an existing conversation.
-        return profile, replace(state, model=profile.model, protocol=profile.protocol)
+        pinned = replace(state, model=profile.model, protocol=profile.protocol)
+        return quickest(profile) if background else with_thinking(profile, state.thinking), pinned
 
     def _done(self, updated: Conversation) -> Event:
         return Event(
