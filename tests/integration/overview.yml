@@ -7,6 +7,7 @@ profiles:
     model: fixture
     endpoint: http://provider:9876/v1/chat/completions
     read_timeout_seconds: 10
+    parallel_suggestions: true
   go-fixture:
     backend: opencode_go
     model: deepseek-v4.1-flash

@@ -11,12 +11,13 @@ const ICON = '<svg viewBox="0 0 512 512" class="ionicon sxng-icon-set-big" aria-
 
 const SEND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';
 const MAX_NOTES = 4;
-const inactive = {update() {}};
+const inactive = {update() {}, active: () => false};
 
 // `expand(value)` sets the panel's disclosure; `focusComposer()` moves focus to
 // the follow-up composer when it is shown, without scrolling to it. `suggest()`
-// resolves to next questions for the latest answer, and `ask(question)` sends one.
-export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
+// resolves to next questions for the latest answer, `suggestAhead()` starts them
+// while an answer is still being written, and `ask(question)` sends one.
+export function chatMode(panel, {expand, focusComposer, suggest, suggestAhead, ask}) {
   const row = document.getElementById("categories_container");
   // Opt-in: the operator enables chat mode with `chat_mode: true`.
   if (panel.dataset.chatMode !== "true" || !row || document.getElementById("ai-chat-tab")) return inactive;
@@ -230,6 +231,8 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
       // smoothly, and the browser's restoration would glide across the reflow.
       history.scrollRestoration = "manual";
     }
+    // Entered mid-answer: its suggestions can be written while it finishes.
+    if (busy) suggestAhead?.();
     swap(() => {
       saved.selected.forEach(button => button.classList.remove("selected"));
       tab.classList.add("selected");
@@ -296,6 +299,8 @@ export function chatMode(panel, {expand, focusComposer, suggest, ask}) {
   }
 
   return {
+    // Whether chatting, as of the latest switch; the page catches up after a crossfade.
+    active,
     update(state) {
       canFollowUp = state.canFollowUp;
       busy = state.busy;

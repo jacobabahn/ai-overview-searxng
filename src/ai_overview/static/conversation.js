@@ -51,6 +51,10 @@ export async function* events(body) {
   }
 }
 
+function questions(value) {
+  return Array.isArray(value) ? value.filter(question => typeof question === "string" && question.trim()).slice(0, 3) : [];
+}
+
 export class Conversation {
   #initialToken;
   #token;
@@ -63,16 +67,25 @@ export class Conversation {
   #canFollowUp = false;
   #failed = false;
   #question;
+  #wantsSuggestions;
+  // Next questions the server sends with the latest answer, if any: a promise, as
+  // they may follow the answer on its stream; `#suggesting` stops that stream.
+  #suggested = null;
+  #suggesting = null;
+  // Whether the answer being written was asked to bring suggestions with it.
+  #askedAhead = false;
   #choices = [];
   #modelsPending = null;
 
-  constructor({token, selected, endpoints, onEvent, client, fetch: request = globalThis.fetch.bind(globalThis)}) {
+  // `wantsSuggestions()` asks the server to suggest next questions alongside an answer.
+  constructor({token, selected, endpoints, onEvent, client, wantsSuggestions = () => false, fetch: request = globalThis.fetch.bind(globalThis)}) {
     this.#initialToken = this.#token = token;
     this.#client = client;
     this.#selected = {...selected};
     this.#endpoints = endpoints;
     this.#fetch = request;
     this.#notify = onEvent;
+    this.#wantsSuggestions = wantsSuggestions;
   }
 
   get state() {
@@ -140,6 +153,27 @@ export class Conversation {
   async suggest({signal} = {}) {
     if (!this.#endpoints.suggest || !this.#canFollowUp || this.#active) return [];
     const token = this.#token;
+    if (this.#suggested) {
+      const sent = await this.#suggested;
+      if (token !== this.#token || this.#active) return [];
+      // None sent (or none usable): ask for them as usual.
+      if (sent.length) return sent;
+    }
+    const asked = await this.#requestSuggestions(token, signal);
+    // A newer answer or restart makes these stale.
+    return token !== this.#token || this.#active ? [] : asked;
+  }
+
+  // Starts suggestions while a search's first answer is still being written, unless
+  // its stream already asked for them; `suggest()` then waits for these.
+  suggestAhead() {
+    if (!this.#endpoints.suggest || this.#active?.phase !== "streaming" || this.#question !== undefined) return;
+    if (this.#askedAhead || this.#suggested) return;
+    this.#suggesting = new AbortController();
+    this.#suggested = this.#requestSuggestions(this.#token, this.#suggesting.signal);
+  }
+
+  async #requestSuggestions(token, signal) {
     try {
       const response = await this.#fetch(this.#endpoints.suggest, {
         method: "POST", credentials: "same-origin", signal,
@@ -147,13 +181,12 @@ export class Conversation {
         body: JSON.stringify({token}),
       });
       const data = await response.json();
-      // A newer answer or restart makes these stale.
-      if (!response.ok || token !== this.#token || this.#active || !Array.isArray(data.questions)) return [];
-      return data.questions.filter(question => typeof question === "string" && question.trim()).slice(0, 3);
+      return response.ok ? questions(data.questions) : [];
     } catch {
       return [];
     }
   }
+
 
   async #select(choice, operation) {
     operation.phase = "selecting";
@@ -166,7 +199,34 @@ export class Conversation {
     this.#reset();
   }
 
+  #dropSuggestions() {
+    this.#suggesting?.abort();
+    this.#suggesting = null;
+    this.#suggested = null;
+  }
+
+  // Reads what follows a finished answer on its stream, up to its suggestions; a
+  // newer turn settles it at once with none.
+  #suggestionsAfter(stream, signal) {
+    const dropped = new Promise(resolve => signal.addEventListener("abort", () => resolve([]), {once: true}));
+    return Promise.race([this.#readSuggestions(stream), dropped]);
+  }
+
+  async #readSuggestions(stream) {
+    try {
+      for (let next; !(next = await stream.next()).done;) {
+        if (next.value.name === "suggestions") return questions(next.value.data.questions);
+      }
+    } catch {
+      // Aborted by a newer turn, or the connection ended.
+    } finally {
+      stream.return().catch(() => {});
+    }
+    return [];
+  }
+
   #reset() {
+    this.#dropSuggestions();
     this.#canFollowUp = false;
     this.#failed = false;
     this.#question = undefined;
@@ -221,6 +281,8 @@ export class Conversation {
     operation.phase = "streaming";
     this.#question = question;
     this.#failed = false;
+    this.#dropSuggestions();
+    this.#askedAhead = Boolean(this.#endpoints.suggest && this.#wantsSuggestions());
     this.#emit("turn_start", {question});
     try {
       for (let attempt = 0; ; attempt++) {
@@ -238,26 +300,44 @@ export class Conversation {
               // Scopes the server's answer cache to this browser.
               ...(this.#client ? {client: this.#client} : {}),
               ...(fresh ? {fresh: true} : {}),
+              ...(this.#askedAhead ? {suggest: true} : {}),
             }),
           });
           if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
             throw new Error("Could not start the overview. Try again.");
           }
           let complete = false;
-          for await (const event of events(response.body)) {
-            signal.throwIfAborted();
-            if (event.name === "error") {
-              throw Object.assign(new Error(event.data.message), {code: event.data.code, status: response.status});
+          let handedOff = false;
+          const stream = events(response.body);
+          try {
+            for (let next; !(next = await stream.next()).done;) {
+              const event = next.value;
+              signal.throwIfAborted();
+              if (event.name === "error") {
+                throw Object.assign(new Error(event.data.message), {code: event.data.code, status: response.status});
+              }
+              if (event.name === "suggestions") {
+                this.#suggested = Promise.resolve(questions(event.data.questions));
+                continue;
+              }
+              if (event.name === "done") {
+                if (typeof event.data.token !== "string" || !event.data.token) throw new Error("Invalid overview continuation.");
+                this.#token = event.data.token;
+                this.#canFollowUp = event.data.can_follow_up;
+                // Suggestions still being written follow the answer on this stream.
+                if (event.data.suggesting === true) {
+                  this.#suggesting = operation.controller;
+                  this.#suggested = this.#suggestionsAfter(stream, operation.controller.signal);
+                  handedOff = true;
+                }
+                complete = true;
+                break;
+              }
+              receivedContent = true;
+              this.#emit(event.name, event.data);
             }
-            if (event.name === "done") {
-              if (typeof event.data.token !== "string" || !event.data.token) throw new Error("Invalid overview continuation.");
-              this.#token = event.data.token;
-              this.#canFollowUp = event.data.can_follow_up;
-              complete = true;
-              break;
-            }
-            receivedContent = true;
-            this.#emit(event.name, event.data);
+          } finally {
+            if (!handedOff) await stream.return();
           }
           if (!complete) throw new Error("The connection ended before the answer was complete.");
           break;

@@ -598,10 +598,26 @@ def check_chat_mode(page: Page, output: Path) -> None:
     # A suggestion asks itself; a search ending in "??" opens straight into chat.
     tab.click()
     expect(suggestions.get_by_role("button")).to_have_count(2)
+    # While chatting, suggestions are written alongside the answer and arrive on its
+    # stream; asked questions are left out, and no separate request is made.
+    asked: list[Request] = []
+
+    def record_ask(request: Request) -> None:
+        if "/ai-overview/" in request.url and request.method == "POST":
+            asked.append(request)
+
+    page.on("request", record_ask)
     suggestions.get_by_role("button", name="Why are clouds white?").click()
     expect(panel.locator(".ai-question").last).to_have_text("Why are clouds white?")
     expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
-    page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F%3F")
+    expect(suggestions.get_by_role("button")).to_have_text(["Is the sky blue on Mars?"])
+    page.remove_listener("request", record_ask)
+    assert [request.url.rsplit("/", 1)[-1] for request in asked] == ["stream"]
+    assert json.loads(asked[0].post_data or "{}")["suggest"] is True
+    with page.expect_request(lambda request: request.url.endswith("/stream")) as opened:
+        page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F%3F")
+    # Already chatting when the first answer is requested, before the crossfade ends.
+    assert json.loads(opened.value.post_data or "{}").get("suggest") is True
     expect(tab).to_have_attribute("aria-pressed", "true", timeout=20000)
     expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
     expect(results).to_be_hidden()
@@ -691,7 +707,9 @@ def check_chat_mode(page: Page, output: Path) -> None:
     page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
     expect(tab).to_be_visible()
     expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
-    tab.click()
+    # Entering mid-answer starts its suggestions without waiting for it to finish.
+    with page.expect_request(lambda request: request.url.endswith("/suggest")):
+        tab.click()
     expect(page.locator("html[data-ai-chat]")).to_have_count(1)
     expect(panel.locator(".ai-follow-up")).to_be_hidden()
     page.get_by_role("button", name="Stop generating", exact=True).click()
