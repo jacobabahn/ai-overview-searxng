@@ -111,7 +111,7 @@ choices with a warning and a short retry delay.
 requests. Selection is allowed only from initial state and the server's choice
 list; it returns a signed model/protocol and fresh conversation ID. The stream
 endpoint never accepts an unsigned model or endpoint override. Local storage
-holds only the chosen profile/model preference and the answer-cache browser ID.
+holds only the chosen profile/model/thinking preference and the answer-cache browser ID.
 
 HTTP transport is injectable: use SearXNG's network layer in the plugin to retain
 its proxy/TLS policy, and HTTPX for standalone development and adapter testing.
