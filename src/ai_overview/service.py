@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, replace
 from typing import Optional
 
@@ -43,7 +44,14 @@ conversation. Return only one JSON object: {"questions": ["...", "..."]} with up
 short, distinct questions a reader might ask next, each under 90 characters, in the
 conversation's language. Ground them in the search snippets above and leave out anything
 your last answer already covered."""
+SUGGEST_AHEAD_PROMPT = """Do not answer the question above. Instead suggest follow-up questions
+a reader might ask after reading an answer to it. Return only one JSON object:
+{"questions": ["...", "..."]} with up to three short, distinct questions, each under 90
+characters, in the conversation's language. Ground them in the search snippets above and
+go beyond what the question itself asks."""
 MAX_SUGGESTIONS = 3
+# How long a finished answer's stream stays open for suggestions still being written.
+SUGGEST_AHEAD_WAIT = 15
 
 
 class GenerationService:
@@ -63,6 +71,8 @@ class GenerationService:
             if config.answer_cache_entries
             else None
         )
+        # Suggestions started alongside an answer; one worker per admitted stream.
+        self.ahead = ThreadPoolExecutor(config.max_concurrent, thread_name_prefix="ai-suggest")
 
     def replay(
         self,
@@ -89,9 +99,18 @@ class GenerationService:
         ]
 
     def run(
-        self, state: Conversation, question: Optional[str], client: Optional[str] = None
+        self,
+        state: Conversation,
+        question: Optional[str],
+        client: Optional[str] = None,
+        suggest: bool = False,
     ) -> Iterator[Event]:
-        """Generate a turn; a completed first answer is cached for `client`."""
+        """Generate a turn; a completed first answer is cached for `client`.
+
+        With `suggest` and a profile that allows it, next questions are asked for
+        alongside the answer and sent as a `suggestions` event once ready, if that is
+        before the answer is done.
+        """
         if len(state.turns) >= self.config.max_turns:
             raise OverviewError("turn_limit", "This conversation is full. Start a new search.")
         if bool(state.turns) != bool(question):
@@ -126,6 +145,15 @@ class GenerationService:
             return
         messages = self._messages(state, current, sources)
         _input_budget(messages, profile)
+        ahead: Optional[Future[tuple[str, ...]]] = None
+        if (
+            suggest
+            and profile.parallel_suggestions
+            and len(state.turns) + 1 < self.config.max_turns
+        ):
+            ahead = self.ahead.submit(
+                self._suggest_ahead, profile, state, current, sources, deadline
+            )
         yield Event("status", {"message": "Writing overview…"})
         output: list[str] = []
         remaining(deadline)
@@ -135,28 +163,99 @@ class GenerationService:
                 remaining(deadline)
                 output.append(text)
                 yield Event("text_delta", {"text": text})
+                if ahead and ahead.done():
+                    yield _suggestions_event(ahead.result())
+                    ahead = None
+        except BaseException:
+            # A stopped or failed answer gets no suggestions.
+            if ahead:
+                ahead.cancel()
+            raise
         finally:
             stream.close()
         remaining(deadline)
         answer = "".join(output)
         if not answer.strip():
+            if ahead:
+                ahead.cancel()
             raise OverviewError("empty_answer", "The model returned no answer. Try again.")
         # Store only complete answers; a stopped or failed stream never reaches here.
         if self.cache and key:
             self.cache.put(key, answer)
-        yield self._done(_answered(state, current, answer, sources))
+        done = self._done(_answered(state, current, answer, sources))
+        if ahead and ahead.done():
+            yield _suggestions_event(ahead.result())
+            ahead = None
+        if not ahead:
+            yield done
+            return
+        # The answer is complete without waiting; its suggestions follow on the same
+        # stream, always as one event so the client knows to stop listening.
+        done.data["suggesting"] = True
+        yield done
+        try:
+            questions = ahead.result(
+                timeout=min(SUGGEST_AHEAD_WAIT, max(0, deadline - time.monotonic()))
+            )
+        except TimeoutError:
+            ahead.cancel()
+            questions = ()
+        yield _suggestions_event(questions)
 
     def suggest(self, state: Conversation) -> tuple[str, ...]:
-        """Offer up to three next questions from the latest turn and its snippets."""
-        if not state.turns or len(state.turns) >= self.config.max_turns:
+        """Offer up to three next questions from the latest turn and its snippets.
+
+        For a search not yet answered, and a profile that allows it, they come from
+        the search and its snippets, so they can be written while the answer is.
+        """
+        if len(state.turns) >= self.config.max_turns or self.config.max_turns < 2:
             return ()
         profile, state = self._pinned(state)
         deadline = time.monotonic() + profile.timeout_seconds
+        if not state.turns:
+            if not profile.parallel_suggestions:
+                return ()
+            return self._suggest_ahead(profile, state, state.query, state.sources, deadline)
         provider = Provider(profile, self.transport)
         # The request repeats the conversation the answer was written from, word for
         # word, and asks only at the end: providers that cache prompt prefixes (Ollama's
         # context reuse, hosted prompt caching) skip re-reading the snippets.
         messages = [*self._conversation(state), Message("user", SUGGEST_PROMPT)]
+        asked = {t.question.casefold() for t in state.turns}
+        return self._ask_for_suggestions(provider, profile, state, messages, asked, deadline)
+
+    def _suggest_ahead(
+        self,
+        profile: Profile,
+        state: Conversation,
+        question: str,
+        sources: tuple[Source, ...],
+        deadline: float,
+    ) -> tuple[str, ...]:
+        """Suggest next questions from the question and its snippets, before the answer."""
+        provider = Provider(profile, self.transport)
+        evidence = _evidence_message(question, sources)
+        messages = [
+            *self._conversation(state),
+            Message("user", f"{evidence}\n\n{SUGGEST_AHEAD_PROMPT}"),
+        ]
+        asked = {t.question.casefold() for t in state.turns} | {question.casefold()}
+        try:
+            return self._ask_for_suggestions(provider, profile, state, messages, asked, deadline)
+        except Exception as error:
+            # Optional: a failure here never touches the answer.
+            log.debug("Suggestions ahead failed (%s)", type(error).__name__)
+            return ()
+
+    @staticmethod
+    def _ask_for_suggestions(
+        provider: Provider,
+        profile: Profile,
+        state: Conversation,
+        messages: list[Message],
+        asked: set[str],
+        deadline: float,
+    ) -> tuple[str, ...]:
         _input_budget(messages, profile)
         stream = provider.stream(
             messages,
@@ -168,7 +267,7 @@ class GenerationService:
             text = "".join(stream).strip()
         finally:
             stream.close()
-        return _suggestions(text, {t.question.casefold() for t in state.turns})
+        return _suggestions(text, asked)
 
     def _pinned(self, state: Conversation) -> tuple[Profile, Conversation]:
         if state.profile not in self.config.profiles:
@@ -314,6 +413,10 @@ def _suggestions(text: str, asked: set[str]) -> tuple[str, ...]:
         if len(kept) == MAX_SUGGESTIONS:
             break
     return tuple(kept)
+
+
+def _suggestions_event(questions: tuple[str, ...]) -> Event:
+    return Event("suggestions", {"questions": list(questions)})
 
 
 def _sources_event(sources: tuple[Source, ...]) -> Event:

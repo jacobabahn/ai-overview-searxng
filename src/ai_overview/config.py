@@ -30,6 +30,9 @@ class Profile:
     read_timeout_seconds: int = 15
     network: str = "ai_overview"
     discover_models: bool = False
+    # Start chat-mode suggestions alongside the answer; for providers that serve
+    # requests in parallel.
+    parallel_suggestions: bool = False
     model_protocols: dict[str, str] = field(default_factory=dict)
 
 
@@ -113,8 +116,9 @@ class Config:
                 raise ValueError("api_key_env must be an environment variable name")
             values.setdefault("protocol", protocol)
             values.setdefault("endpoint", endpoint)
-            if type(values.get("discover_models", False)) is not bool:
-                raise ValueError("discover_models must be a boolean")
+            for flag in ("discover_models", "parallel_suggestions"):
+                if type(values.get(flag, False)) is not bool:
+                    raise ValueError(f"{flag} must be a boolean")
             if values.get("discover_models") and backend != "opencode_go":
                 raise ValueError("Model discovery currently supports OpenCode Go")
             routes = values.get("model_protocols", {})
