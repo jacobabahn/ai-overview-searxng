@@ -63,26 +63,51 @@
 .ai-overview .ai-stop svg { fill: currentColor; stroke: none; }
 .ai-overview button:enabled:hover { color: var(--ai-link); background: var(--ai-tint); }
 .ai-overview .ai-header-actions .ai-options-toggle[aria-expanded="true"] { color: var(--ai-link); background: var(--ai-tint); }
+/* Summary settings: a small sheet under the toggle. The heading states what is
+   answering now; the controls below are a draft until the footer button applies it. */
 .ai-overview .ai-options {
+  --ai-control-radius: 0.5rem;
   position: absolute; z-index: 5; inset-inline-end: 0; top: 3rem;
   box-sizing: border-box; width: 22rem; max-width: 100%;
   max-height: min(34rem, calc(100dvh - 4rem)); overflow-y: auto;
-  padding: 1rem; color: var(--ai-text); font-size: 0.875rem; line-height: 1.5;
-  background: var(--ai-bg); border: 1px solid var(--ai-border); border-radius: 0.65rem;
-  box-shadow: 0 8px 24px #0000001a;
+  padding: 1rem 1rem 0.875rem; color: var(--ai-text); font-size: 0.875rem; line-height: 1.5;
+  background: var(--ai-bg); border: 1px solid var(--ai-border); border-radius: 0.75rem;
+  box-shadow: 0 1px 2px #0000000f, 0 12px 32px -8px #00000033;
 }
+.ai-overview .ai-options:focus { outline: none; }
+.ai-overview .ai-options :is(button, input, select):focus-visible { outline-offset: 1px; }
 .ai-overview .ai-settings-heading,
 .ai-overview .ai-model-label { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.ai-overview .ai-settings-heading { margin-block-end: 0.5rem; }
-.ai-overview .ai-settings-heading h3 { margin: 0; font: inherit; font-size: 1rem; font-weight: 650; }
-.ai-overview .ai-settings-close { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; color: var(--ai-muted); }
-.ai-overview .ai-refresh-models { min-height: 44px; padding: 0.4rem 0; border: 0; font-size: 0.8rem; }
-.ai-overview .ai-model-label label { font-weight: 600; }
-.ai-overview .ai-settings-footer { margin-block-start: 1rem; padding-block-start: 0.85rem; border-block-start: 1px solid var(--ai-border); }
-.ai-overview .ai-settings-footer > button { width: 100%; min-height: 44px; background: var(--ai-tint); font-weight: 600; }
+.ai-overview .ai-settings-heading { align-items: flex-start; }
+.ai-overview .ai-settings-title { min-width: 0; padding-block-start: 0.2rem; }
+.ai-overview .ai-settings-heading h3 { margin: 0; font: inherit; font-size: 1rem; font-weight: 650; line-height: 1.3; }
+.ai-overview .ai-current-model { margin: 0.2rem 0 0; color: var(--ai-muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+.ai-overview .ai-settings-close {
+  display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem;
+  margin: -0.5rem -0.5rem 0 0; padding: 0; border: 0; border-radius: var(--ai-control-radius); color: var(--ai-muted);
+}
+.ai-overview .ai-model-settings { margin-block-start: 1rem; }
+.ai-overview .ai-model-label { margin-block-end: 0.375rem; }
+.ai-overview .ai-model-label label,
+.ai-overview .ai-thinking-settings legend { font-weight: 600; }
+.ai-overview .ai-refresh-models { min-height: 44px; margin-block: -0.6rem; padding: 0.4rem 0; border: 0; font-size: 0.8rem; color: var(--ai-muted); }
+.ai-overview .ai-refresh-models:enabled:hover { color: var(--ai-link); background: transparent; text-decoration: underline; text-underline-offset: 0.2em; }
+.ai-overview .ai-settings-footer { margin-block-start: 1rem; padding-block-start: 1rem; border-block-start: 1px solid var(--ai-border); }
+.ai-overview .ai-settings-footer > button {
+  width: 100%; min-height: 44px; border-radius: var(--ai-control-radius); font-weight: 600;
+  background: var(--ai-tint); border-color: transparent;
+}
+.ai-overview .ai-settings-footer > button:enabled:hover { background: color-mix(in srgb, var(--ai-bg) 86%, var(--ai-link)); }
+/* Something to apply turns the button solid, like a ready-to-send composer. */
+.ai-overview .ai-apply-model:enabled { color: var(--ai-bg); background: var(--ai-link); }
+.ai-overview .ai-apply-model:enabled:hover { color: var(--ai-bg); background: color-mix(in srgb, var(--ai-link) 85%, var(--ai-text)); }
 .ai-overview .ai-restart-help,
-.ai-overview .ai-settings-busy { margin: 0 0 0.75rem; color: var(--ai-muted); font-size: 0.8rem; }
-.ai-overview .ai-settings-busy { margin: 0.65rem 0 0; }
+.ai-overview .ai-settings-busy { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .ai-overview .ai-settings-footer > button,
+  .ai-overview .ai-model-settings select,
+  .ai-overview .ai-thinking label { transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out; }
+}
 .ai-overview .ai-status,
 .ai-overview .ai-turn-status { color: var(--ai-muted); font-size: 0.85rem; margin-block: 0.75rem; }
 .ai-overview .ai-status:empty { display: none; }
@@ -178,18 +203,47 @@
   color: var(--ai-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-block: 0.5rem; font-size: 0.9rem;
 }
-.ai-overview .ai-thinking-settings { margin-block-start: 0.85rem; }
-.ai-overview .ai-thinking-settings label { display: block; margin-block-end: 0.35rem; font-weight: 600; }
-.ai-overview .ai-current-model { margin: 0.5rem 0; color: var(--ai-muted); overflow-wrap: anywhere; font-size: 0.8rem; }
+/* The model field draws its own chevron so it sits inside the field in every browser. */
+.ai-overview .ai-select { position: relative; display: block; }
+.ai-overview .ai-select::after {
+  content: ""; position: absolute; inset-inline-end: 0.875rem; top: 50%; width: 0.75rem; height: 0.75rem;
+  translate: 0 -50%; pointer-events: none; background: var(--ai-muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .ai-overview .ai-model-settings select {
   box-sizing: border-box; display: block; max-width: 100%; width: 100%; min-height: 44px;
-  margin: 0; padding: 0.6rem; font: inherit; appearance: auto;
-  color: var(--ai-text); background: var(--ai-bg);
-  border: 1px solid var(--ai-border); border-radius: 0.4rem;
+  margin: 0; padding: 0.6rem 2.5rem 0.6rem 0.75rem; font: inherit; appearance: none;
+  color: var(--ai-text); background: var(--ai-bg); text-overflow: ellipsis;
+  border: 1px solid var(--ai-border); border-radius: var(--ai-control-radius);
 }
+.ai-overview .ai-model-settings select:enabled { cursor: pointer; }
+.ai-overview .ai-model-settings select:enabled:hover { border-color: color-mix(in srgb, var(--ai-text) 35%, var(--ai-border)); }
+.ai-overview .ai-model-settings select:disabled { color: var(--ai-muted); cursor: default; }
 .ai-overview .ai-model-help,
-.ai-overview .ai-model-status { margin: 0.65rem 0 0; color: var(--ai-muted); font-size: 0.8rem; }
+.ai-overview .ai-model-status { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8rem; }
 .ai-overview .ai-model-status:empty { display: none; }
+/* Thinking is one row of equal segments on a quiet track; the chosen one is raised. */
+.ai-overview .ai-thinking-settings { margin: 1rem 0 0; padding: 0; border: 0; min-width: 0; }
+.ai-overview .ai-thinking-settings legend { padding: 0; margin-block-end: 0.375rem; }
+.ai-overview .ai-thinking {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.125rem;
+  box-sizing: border-box; width: 100%; padding: 0.1875rem;
+  background: color-mix(in srgb, var(--ai-bg) 94%, var(--ai-text)); border-radius: var(--ai-control-radius);
+}
+.ai-overview .ai-thinking label {
+  position: relative; display: grid; place-items: center; min-width: 0; min-height: 2.125rem;
+  padding-inline: 0.25rem; border-radius: calc(var(--ai-control-radius) - 0.1875rem);
+  color: var(--ai-muted); font-size: 0.8125rem; font-weight: 500; text-align: center; cursor: pointer;
+}
+.ai-overview .ai-thinking input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.ai-overview .ai-thinking label:hover { color: var(--ai-text); }
+.ai-overview .ai-thinking label:has(input:checked) {
+  color: var(--ai-text); font-weight: 600; background: var(--ai-bg);
+  box-shadow: 0 1px 2px #0000001f, 0 0 0 1px color-mix(in srgb, var(--ai-text) 10%, transparent);
+}
+.ai-overview .ai-thinking label:has(input:focus-visible) { outline: 2px solid var(--ai-link); outline-offset: 1px; }
+.ai-overview .ai-thinking-settings:disabled label { color: var(--ai-muted); cursor: default; }
+.ai-overview .ai-thinking-settings:disabled .ai-thinking { opacity: 0.6; }
 @media (max-width: 450px) {
   .ai-overview .ai-sources summary span { display: block; margin-inline-start: 1rem; }
 }
@@ -197,7 +251,7 @@
 .ai-overview .ai-options:not([hidden]) {
   animation: ai-summary-reveal 160ms ease-out;
 }
-@keyframes ai-summary-reveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ai-summary-reveal { from { opacity: 0; translate: 0 -4px; } to { opacity: 1; translate: 0 0; } }
 @media (prefers-reduced-motion: reduce) {
   .ai-overview .ai-options:not([hidden]) { animation: none; }
 }
