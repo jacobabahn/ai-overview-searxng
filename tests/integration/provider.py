@@ -30,7 +30,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         messages = body["messages"]
         planning = "Plan retrieval" in messages[0]["content"]
-        suggesting = "Suggest follow-up" in messages[0]["content"]
+        suggesting = "suggest follow-up questions" in messages[-1]["content"]
         text = (
             '{"query":"sunset colors"}'
             if planning
