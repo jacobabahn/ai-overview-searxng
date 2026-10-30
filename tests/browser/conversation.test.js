@@ -385,3 +385,27 @@ test("suggestions started mid-answer are waited for instead of asked again", asy
   calls[2].resolve(done("second-continuation"));
   await followUp;
 });
+
+test("a remembered thinking level is selected, or dropped when the model no longer offers it", async () => {
+  const models = json({choices: [{profile: "go", model: "first", protocol: "chat", available: true, thinking_levels: ["off", "low"]}], warnings: []});
+  for (const [saved, sent] of [["low", "low"], ["high", undefined]]) {
+    const {conversation: c, calls} = harness();
+    const run = c.start({profile: "go", model: "first", thinking: saved});
+    (await nextCall(calls, 1)).resolve(models.clone());
+    const select = await nextCall(calls, 2);
+    assert.equal(select.url, "/select");
+    assert.equal(select.body.thinking, sent);
+    select.resolve(json({token: "selected"}));
+    (await nextCall(calls, 3)).resolve(done("first-continuation"));
+    await run;
+    assert.equal(c.state.selected.thinking, sent ?? null);
+  }
+  // Nothing remembered beyond the default: no selection request.
+  const {conversation: c, calls} = harness();
+  const run = c.start({profile: "go", model: "first", thinking: null});
+  await nextCall(calls, 2);
+  assert.deepEqual(calls.map(call => call.url).sort(), ["/models", "/stream"]);
+  calls.find(call => call.url === "/models").resolve(models.clone());
+  calls.find(call => call.url === "/stream").resolve(done("first-continuation"));
+  await run;
+});
