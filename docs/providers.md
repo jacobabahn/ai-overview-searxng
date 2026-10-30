@@ -115,6 +115,12 @@ They come from one small extra request to the same profile, which sees only the
 conversation and that turn's search snippets, and use `planning_max_output_tokens`.
 Set `follow_up_suggestions: false` to skip that request.
 
+That request normally starts once the answer is complete. For a provider that
+serves requests in parallel, such as a hosted API, set `parallel_suggestions: true`
+on the profile to start it alongside the answer while chatting, from the question
+and its snippets, so the suggestions are ready when the answer ends. Leave it off
+for a local server that runs one request at a time, where it would delay the answer.
+
 ## Local Ollama
 
 For an Ollama model you have already installed, configure the profile below.

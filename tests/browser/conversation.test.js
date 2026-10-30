@@ -263,3 +263,125 @@ test("suggestions use the latest continuation and go stale with it", async () =>
   (await nextCall(calls, 4)).resolve(done("second-continuation"));
   await followUp;
 });
+
+test("suggestions sent with an answer are used without another request", async () => {
+  const calls = [];
+  const events = [];
+  let chatting = false;
+  const conversation = new Conversation({
+    token: "original-search",
+    selected: {profile: "go", model: "first"},
+    endpoints: {stream: "/stream", suggest: "/suggest"},
+    onEvent: event => events.push(event.name),
+    wantsSuggestions: () => chatting,
+    fetch: (url, options) => new Promise(resolve => calls.push({url, body: JSON.parse(options.body), resolve})),
+  });
+  const run = conversation.start();
+  const first = await nextCall(calls, 1);
+  // Only asked for while chatting.
+  assert.deepEqual(first.body, {token: "original-search"});
+  first.resolve(done("first-continuation"));
+  await run;
+  chatting = true;
+  const followUp = conversation.run("Next?");
+  const second = await nextCall(calls, 2);
+  assert.deepEqual(second.body, {token: "first-continuation", question: "Next?", suggest: true});
+  second.resolve(sse(
+    ["text_delta", {text: "Answer [1]"}],
+    ["suggestions", {questions: ["Why?", 7, "How?"]}],
+    ["done", {token: "second-continuation", can_follow_up: true}],
+  ));
+  await followUp;
+  assert.ok(!events.includes("suggestions"));
+  assert.deepEqual(await conversation.suggest(), ["Why?", "How?"]);
+  assert.equal(calls.length, 2);
+  // The next answer starts without them: no event means the client asks afterwards.
+  const third = conversation.run("Again?");
+  (await nextCall(calls, 3)).resolve(done("third-continuation"));
+  await third;
+  const pending = conversation.suggest();
+  (await nextCall(calls, 4)).resolve(json({questions: ["Later?"]}));
+  assert.deepEqual(await pending, ["Later?"]);
+});
+
+test("suggestions can follow a finished answer on its stream", async () => {
+  const calls = [];
+  const conversation = new Conversation({
+    token: "original-search",
+    selected: {profile: "go", model: "first"},
+    endpoints: {stream: "/stream", suggest: "/suggest"},
+    onEvent: () => {},
+    wantsSuggestions: () => true,
+    fetch: (url, options) => new Promise(resolve => calls.push({url, body: JSON.parse(options.body), resolve})),
+  });
+  const encoder = new TextEncoder();
+  const frame = (name, data) => encoder.encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+  let later;
+  const body = new ReadableStream({start(controller) {
+    controller.enqueue(frame("text_delta", {text: "Answer [1]"}));
+    controller.enqueue(frame("done", {token: "first-continuation", can_follow_up: true, suggesting: true}));
+    later = controller;
+  }});
+  const run = conversation.start();
+  (await nextCall(calls, 1)).resolve(new Response(body, {headers: {"Content-Type": "text/event-stream"}}));
+  // The answer is done while its suggestions are still on their way.
+  await run;
+  assert.equal(conversation.state.busy, false);
+  assert.equal(conversation.state.canFollowUp, true);
+  const pending = conversation.suggest();
+  later.enqueue(frame("suggestions", {questions: ["Why?"]}));
+  later.close();
+  assert.deepEqual(await pending, ["Why?"]);
+  assert.equal(calls.length, 1);
+
+  // A newer turn stops listening; its own suggestions come from a request.
+  const second = new ReadableStream({start(controller) {
+    controller.enqueue(frame("text_delta", {text: "Answer [1]"}));
+    controller.enqueue(frame("done", {token: "second-continuation", can_follow_up: true, suggesting: true}));
+  }});
+  const followUp = conversation.run("Next?");
+  (await nextCall(calls, 2)).resolve(new Response(second, {headers: {"Content-Type": "text/event-stream"}}));
+  await followUp;
+  const stale = conversation.suggest();
+  const third = conversation.run("Again?");
+  assert.deepEqual(await stale, []);
+  (await nextCall(calls, 3)).resolve(done("third-continuation"));
+  await third;
+});
+
+test("suggestions started mid-answer are waited for instead of asked again", async () => {
+  const calls = [];
+  let chatting = false;
+  const conversation = new Conversation({
+    token: "original-search",
+    selected: {profile: "go", model: "first"},
+    endpoints: {stream: "/stream", suggest: "/suggest"},
+    onEvent: () => {},
+    wantsSuggestions: () => chatting,
+    fetch: (url, options) => new Promise(resolve => calls.push({url, body: JSON.parse(options.body), resolve})),
+  });
+  conversation.suggestAhead();
+  assert.equal(calls.length, 0);
+  const run = conversation.start();
+  const stream = await nextCall(calls, 1);
+  // Chat entered while the first answer streams: ask now, from the search itself.
+  chatting = true;
+  conversation.suggestAhead();
+  conversation.suggestAhead();
+  const ahead = await nextCall(calls, 2);
+  assert.deepEqual([ahead.url, ahead.body], ["/suggest", {token: "original-search"}]);
+  stream.resolve(done("first-continuation"));
+  await run;
+  const pending = conversation.suggest();
+  ahead.resolve(json({questions: ["Why?"]}));
+  assert.deepEqual(await pending, ["Why?"]);
+  assert.equal(calls.length, 2);
+  // A stream that brings its own suggestions, or a follow-up, starts none here.
+  const followUp = conversation.run("Next?");
+  await nextCall(calls, 3);
+  conversation.suggestAhead();
+  await tick();
+  assert.equal(calls.length, 3);
+  calls[2].resolve(done("second-continuation"));
+  await followUp;
+});

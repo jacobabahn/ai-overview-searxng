@@ -217,11 +217,13 @@ function mount(panel) {
     selected: {profile: panel.dataset.profile, model: panel.dataset.model},
     endpoints: {stream: panel.dataset.endpoint, models: picker ? panel.dataset.modelsEndpoint : null, select: picker ? panel.dataset.selectEndpoint : null, suggest: panel.dataset.suggestEndpoint},
     onEvent: renderEvent,
+    wantsSuggestions: () => chat.active(),
   });
   const chat = chatMode(panel, {
     expand,
     focusComposer: () => { if (!form.hidden) input.focus({preventScroll: true}); },
     suggest: options => conversation.suggest(options),
+    suggestAhead: () => conversation.suggestAhead(),
     ask: question => {
       input.value = question;
       input.focus({preventScroll: true});

@@ -1,4 +1,5 @@
 import json
+import threading
 from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -502,6 +503,123 @@ def test_suggestions_stop_at_the_turn_limit() -> None:
     done = list(service.run(state, None))[-1]
     assert service.suggest(service.signer.loads(done.data["token"])) == ()
     assert len(transport.calls) == 1
+
+
+def _chunks(*texts: str) -> Iterator[bytes]:
+    for text in texts:
+        delta = {"choices": [{"delta": {"content": text}, "finish_reason": None}]}
+        yield f"data: {json.dumps(delta)}\n\n".encode()
+    yield b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+
+
+@dataclass
+class AheadTransport:
+    """Streams answers in two parts; `between` runs after the first, `suggesting` gates
+    the suggestions call."""
+
+    between: Callable[[], None] = lambda: None
+    suggesting: threading.Event = field(default_factory=threading.Event)
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    @contextmanager
+    def stream(
+        self,
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        profile: Profile,
+        *,
+        deadline: Optional[float] = None,
+    ) -> Iterator[Iterable[bytes]]:
+        self.calls.append(body)
+        if "suggest follow-up questions" in body["messages"][-1]["content"]:
+            self.suggesting.wait(5)
+            yield _chunks('{"questions": ["Why?", "q?", "How?"]}')
+        else:
+
+            def answer() -> Iterator[bytes]:
+                chunks = _chunks("First ", "[1]")
+                yield next(chunks)
+                self.between()
+                yield from chunks
+
+            yield answer()
+
+
+def ahead_service(
+    transport: AheadTransport, parallel: bool = True
+) -> tuple[GenerationService, Any]:
+    config = Config.from_dict(
+        {
+            "default_profile": "test",
+            "max_concurrent": 1,
+            "profiles": {
+                "test": {"backend": "local", "model": "test", "parallel_suggestions": parallel}
+            },
+        }
+    )
+    service = GenerationService(config, StateSigner("s" * 32), transport, lambda *_: ())
+    state = initial_state(
+        "q?", build_sources([{"url": "https://a.com", "content": "Evidence"}]), "test"
+    )
+    return service, state
+
+
+def test_suggestions_ready_during_the_answer_arrive_before_done() -> None:
+    transport = AheadTransport()
+    service, state = ahead_service(transport)
+    transport.suggesting.set()
+    # One worker: an empty task queued behind the suggestions finishes after them.
+    transport.between = lambda: service.ahead.submit(lambda: None).result()
+    events = list(service.run(state, None, suggest=True))
+    names = [event.name for event in events]
+    assert names.count("suggestions") == 1 and names[-1] == "done"
+    assert "suggesting" not in events[-1].data
+    # The question already asked is not suggested again.
+    assert events[names.index("suggestions")].data == {"questions": ["Why?", "How?"]}
+    answer, ahead = sorted(transport.calls, key=lambda body: "suggest" in str(body))
+    # Same conversation as the answer, with the request added to its last message.
+    assert ahead["messages"][:-1] == answer["messages"][:-1]
+    assert ahead["messages"][-1]["content"].startswith(answer["messages"][-1]["content"])
+
+
+def test_suggestions_still_being_written_follow_the_finished_answer() -> None:
+    transport = AheadTransport()
+    service, state = ahead_service(transport)
+    names = []
+    for event in service.run(state, None, suggest=True):
+        names.append(event.name)
+        if event.name == "done":
+            # The answer finishes without waiting; the client keeps listening.
+            assert event.data["suggesting"] is True
+            transport.suggesting.set()
+    assert names[-2:] == ["done", "suggestions"]
+
+
+def test_an_unanswered_search_gets_suggestions_only_from_a_parallel_profile() -> None:
+    for parallel in (True, False):
+        transport = AheadTransport()
+        service, state = ahead_service(transport, parallel)
+        transport.suggesting.set()
+        # Written from the search and its snippets, while its answer is.
+        assert service.suggest(state) == (("Why?", "How?") if parallel else ())
+        assert len(transport.calls) == int(parallel)
+
+
+def test_suggestions_ahead_need_the_profile_setting_and_the_request() -> None:
+    for parallel, suggest in ((False, True), (True, False)):
+        transport = AheadTransport()
+        service, state = ahead_service(transport, parallel)
+        transport.suggesting.set()
+        list(service.run(state, None, suggest=suggest))
+        assert len(transport.calls) == 1
+    with pytest.raises(ValueError, match="parallel_suggestions must be a boolean"):
+        Config.from_dict(
+            {
+                "default_profile": "t",
+                "profiles": {"t": {"backend": "local", "model": "m", "parallel_suggestions": 1}},
+            }
+        )
 
 
 def test_suggest_endpoint_validates_state_and_can_be_disabled() -> None:
