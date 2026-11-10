@@ -35,7 +35,7 @@ make integration-down
 ```
 
 Compose files accept `SEARXNG_IMAGE` to test a different image version or digest.
-The default is the version used during initial development.
+The default is the SearXNG version the project is currently tested with.
 
 ## Packaging and CI
 

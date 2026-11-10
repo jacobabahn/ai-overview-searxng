@@ -2,7 +2,7 @@
 
 The plugin is a Python package loaded by SearXNG, with packaged JavaScript, CSS,
 and templates. It targets the Simple theme and builds answers from search snippets.
-Integration tests use SearXNG `2026.9.19-e831fc2a1`.
+Integration tests use SearXNG `2026.11.9-57ff753ad`.
 
 After the first answer, the browser can continue the conversation with
 follow-up questions; each one may trigger a fresh internal search.

@@ -16,7 +16,7 @@ or a hosted provider.
 - Fits SearXNG's Simple theme, including dark mode and mobile layouts.
 
 **Early-stage software for personal instances.** Tested with SearXNG
-`2026.9.19-e831fc2a1` and the Simple theme; other versions and themes are
+`2026.11.9-57ff753ad` and the Simple theme; other versions and themes are
 unverified.
 
 [Provider configuration](docs/providers.md) ·
