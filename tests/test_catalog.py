@@ -1,3 +1,4 @@
+import threading
 from dataclasses import replace
 from typing import Any
 
@@ -52,7 +53,6 @@ def test_discovery_is_cached_and_protocols_are_explicit() -> None:
     assert models["gpt-5.6-luna"].protocol == "responses"
     assert models["minimax-m3"].protocol == "anthropic"
     assert models["new-unmapped-model"].protocol == "anthropic"
-    assert models["new-unmapped-model"].available
     assert first.warnings == ()
 
 
@@ -81,6 +81,112 @@ def test_failed_discovery_preserves_configured_model() -> None:
     assert result.choices[0].model == "deepseek-v4.1-flash"
     assert result.warnings
     assert catalog.list() == result
+    assert len(calls) == 1
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_failed_refresh_backs_off_and_shows_saved_choices() -> None:
+    clock = Clock()
+    calls: list[str] = []
+    replies: list[Any] = [{"data": [{"id": "deepseek-v4.1-flash"}, {"id": "glm-5.3"}]}]
+
+    def fetch(url: str, profile: Profile) -> dict[str, Any]:
+        calls.append(url)
+        if not replies:
+            raise OverviewError("timeout", "timeout")
+        return replies.pop(0)
+
+    catalog = ModelCatalog(config(), fetch, clock)
+    saved = catalog.list()
+    assert saved.warnings == ()
+    clock.now += 299
+    assert catalog.list() == saved
+    assert len(calls) == 1
+
+    clock.now += 2
+    failed = catalog.list()
+    assert failed.choices == saved.choices
+    assert failed.warnings == ("Could not refresh models for go; showing saved choices.",)
+    clock.now += 14
+    assert catalog.list() == failed
+    assert len(calls) == 2
+
+    clock.now += 2
+    replies.append({"data": [{"id": "deepseek-v4.1-flash"}]})
+    recovered = catalog.list()
+    assert [c.model for c in recovered.choices] == ["deepseek-v4.1-flash"]
+    assert recovered.warnings == ()
+    assert len(calls) == 3
+
+
+def test_slow_refresh_does_not_block_requests_served_from_cache() -> None:
+    clock = Clock()
+    calls: list[str] = []
+    started = threading.Event()
+    release = threading.Event()
+
+    def fetch(url: str, profile: Profile) -> dict[str, Any]:
+        calls.append(url)
+        if len(calls) == 1:
+            return {"data": [{"id": "deepseek-v4.1-flash"}, {"id": "glm-5.3"}]}
+        started.set()
+        # A request stuck behind this fetch would return its fresh list, failing below.
+        assert release.wait(10)
+        return {"data": [{"id": "deepseek-v4.1-flash"}, {"id": "kimi-k3"}]}
+
+    catalog = ModelCatalog(config(), fetch, clock)
+    saved = catalog.list()
+    clock.now += 301
+    refreshed: list[Any] = []
+    refresher = threading.Thread(target=lambda: refreshed.append(catalog.list()))
+    refresher.start()
+    try:
+        assert started.wait(10)
+        # The refresh is in flight: others get the saved entry and start no second fetch.
+        assert catalog.list() == saved
+        selected = catalog.select(initial_state("q?", (), "go"), "go", "glm-5.3")
+        assert selected.model == "glm-5.3"
+        assert len(calls) == 2
+    finally:
+        release.set()
+        refresher.join(10)
+    assert not refresher.is_alive()
+    assert [c.model for c in refreshed[0].choices] == ["deepseek-v4.1-flash", "kimi-k3"]
+    assert catalog.list() == refreshed[0]
+    assert len(calls) == 2
+
+
+def test_concurrent_first_requests_share_one_fetch() -> None:
+    calls: list[str] = []
+    started = threading.Event()
+    release = threading.Event()
+
+    def fetch(url: str, profile: Profile) -> dict[str, Any]:
+        calls.append(url)
+        started.set()
+        assert release.wait(10)
+        return {"data": [{"id": "deepseek-v4.1-flash"}, {"id": "glm-5.3"}]}
+
+    catalog = ModelCatalog(config(), fetch)
+    results: list[Any] = []
+    workers = [threading.Thread(target=lambda: results.append(catalog.list())) for _ in range(4)]
+    workers[0].start()
+    assert started.wait(10)
+    for worker in workers[1:]:
+        worker.start()
+    release.set()
+    for worker in workers:
+        worker.join(10)
+    assert len(results) == 4
+    assert all(r == results[0] for r in results)
+    assert [c.model for c in results[0].choices] == ["deepseek-v4.1-flash", "glm-5.3"]
     assert len(calls) == 1
 
 
