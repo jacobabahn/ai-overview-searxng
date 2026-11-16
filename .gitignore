@@ -22,3 +22,6 @@ htmlcov/
 artifacts/
 .DS_Store
 *.swp
+
+# Local showcase material (recordings and capture scripts), not part of the repo
+/showcase/
