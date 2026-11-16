@@ -289,7 +289,7 @@ function mount(panel) {
       const changed = modelChanged || (choice && (thinkingValue() || null) !== (state.selected.thinking ?? null));
       applyModel.hidden = !changed;
       regenerate.hidden = Boolean(changed);
-      applyModel.disabled = picker.disabled || !choice?.available || !changed;
+      applyModel.disabled = picker.disabled || !choice || !changed;
       reloadModels.textContent = state.loadingModels ? "Refreshing…" : "Refresh list";
     }
   }
@@ -315,7 +315,7 @@ function mount(panel) {
     reloadModels.addEventListener("click", () => conversation.loadModels());
     applyModel.addEventListener("click", async () => {
       const choice = conversation.state.choices[Number(picker.value)];
-      if (applyModel.disabled || !choice?.available) return;
+      if (applyModel.disabled || !choice) return;
       try {
         await conversation.restart({...choice, thinking: thinkingValue() || null});
       } catch (error) {
@@ -432,8 +432,7 @@ function mount(panel) {
       for (const [index, choice] of state.choices.entries()) {
         const option = document.createElement("option");
         option.value = String(index);
-        option.textContent = `${choice.profile} / ${choice.model}${choice.available ? "" : " (not configured)"}`;
-        option.disabled = !choice.available;
+        option.textContent = `${choice.profile} / ${choice.model}`;
         option.selected = choice.profile === state.selected.profile && choice.model === state.selected.model;
         picker.append(option);
       }
