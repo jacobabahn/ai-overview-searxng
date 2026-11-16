@@ -157,7 +157,8 @@ follow-ups are planned and searched.
 | Symptom | Check |
 | --- | --- |
 | No summary panel | Simple theme, plugin enabled in Preferences, first page of General results, and a trailing `?`. Check SearXNG logs for configuration errors. |
-| Configuration error | YAML paths and permissions, a valid `default_profile`, and a strong `server.secret_key`. Restart after edits. |
+| Configuration error | The SearXNG log line `AI overview configuration failed: …` names the problem. Check YAML paths and permissions, a valid `default_profile`, and a strong `server.secret_key`. Restart after edits. |
+| "Needs an API key" | The log warns at startup about each profile whose key variable is unset or empty. Pass the variable into the SearXNG container, or point `api_key_env` at the one you set. |
 | Local model unreachable | Test the endpoint from inside the container. Enable HTTP on the `ai_overview` network for HTTP endpoints. |
 | Answer arrives all at once | Disable reverse-proxy buffering for `/ai-overview/stream` and set its read timeout longer than the configured generation timeout. |
 | Summary stays busy | The worker has reached its generation limit. Automatic retries are bounded; wait for active requests to finish or use Retry. |
