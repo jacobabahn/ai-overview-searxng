@@ -27,6 +27,11 @@ jobs:
       - name: Build distributions
         run: uv build
 
+  # Runs on the GitHub runner itself; nothing is built or deployed. Compose
+  # pulls the published SearXNG image pinned in compose.test.yml, mounts the
+  # plugin source from this checkout into it, and starts a fake model provider
+  # beside it. The checks then drive that instance at 127.0.0.1:8899 with
+  # headless Chromium. No real search engines or model providers are called.
   integration:
     runs-on: ubuntu-latest
     steps:
