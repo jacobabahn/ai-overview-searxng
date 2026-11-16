@@ -39,8 +39,11 @@ class SXNGPlugin(Plugin):
             self.service = GenerationService(config, signer, transport, self.retrieve)
             register(app, self.service, ModelCatalog(config, transport.get_json))
         except (OSError, ValueError) as error:
-            self.log.error("AI overview configuration failed (%s)", type(error).__name__)
+            # Config and signer messages name files, profiles and fields, never secrets.
+            self.log.error("AI overview configuration failed: %s", error)
             return False
+        for warning in config.warnings():
+            self.log.warning("AI overview: %s", warning)
         return True
 
     def post_search(self, request: Any, search: Any) -> list[Any]:
