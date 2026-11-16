@@ -51,6 +51,12 @@ a reader might ask after reading an answer to it. Return only one JSON object:
 characters, in the conversation's language. Ground them in the search snippets above and
 go beyond what the question itself asks."""
 MAX_SUGGESTIONS = 3
+# Planning failures the answer request would repeat; report them at once instead of
+# searching first. Any other provider failure falls back to a bounded search.
+PLAN_FATAL = frozenset({"configuration", "context_limit", "provider_auth", "provider_limit"})
+# `SearchQuery.lang` values that name no language: SearXNG's default, its
+# browser-detected setting (resolved before plugins run, but valid in state) and blank.
+ANY_LANGUAGE = frozenset({"", "all", "auto"})
 # How long a finished answer's stream stays open for suggestions still being written.
 SUGGEST_AHEAD_WAIT = 15
 
@@ -310,6 +316,7 @@ class GenerationService:
         ]
         _input_budget(messages, provider.profile)
         remaining(deadline)
+        fallback = Plan(f"{state.query[:200]} {question[:299]}")
         stream = provider.stream(
             messages,
             state.session,
@@ -318,6 +325,15 @@ class GenerationService:
         )
         try:
             text = "".join(stream).strip()
+        except OverviewError as error:
+            if error.code in PLAN_FATAL:
+                raise
+            # A spent deadline fails the turn; a provider that was merely slow does not.
+            remaining(deadline)
+            # Planning is a small side request (a reasoning model can spend its whole
+            # output budget thinking); the answer may still succeed.
+            log.warning("Follow-up planning failed (%s); searching with the question", error.code)
+            return fallback
         finally:
             stream.close()
         try:
@@ -332,7 +348,7 @@ class GenerationService:
                     return Plan(query.strip())
         except (ValueError, IndexError):
             pass
-        return Plan(f"{state.query[:200]} {question[:299]}")
+        return fallback
 
     @staticmethod
     def _messages(
@@ -347,7 +363,12 @@ class GenerationService:
 
     @staticmethod
     def _conversation(state: Conversation) -> list[Message]:
-        messages = [Message("system", f"{ANSWER_PROMPT}\nSearch language: {state.search.lang}")]
+        # The prompt defers to a search language only when one is named.
+        lang = state.search.lang
+        system = (
+            ANSWER_PROMPT if lang in ANY_LANGUAGE else f"{ANSWER_PROMPT}\nSearch language: {lang}"
+        )
+        messages = [Message("system", system)]
         for turn in state.turns:
             messages.extend(
                 [

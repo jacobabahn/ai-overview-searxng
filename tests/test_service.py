@@ -97,6 +97,113 @@ def test_followup_reuses_evidence() -> None:
     assert not queries
 
 
+def followup_state() -> Any:
+    from ai_overview.models import Turn
+
+    sources = build_sources([{"url": "https://old.example", "content": "Old evidence"}])
+    return replace(
+        initial_state("initial?", sources, "test"), turns=(Turn("initial?", "First", sources),)
+    )
+
+
+def failing_plan(service: GenerationService, error: OverviewError) -> None:
+    """Make the first provider request, the planning one, fail while streaming."""
+    transport = cast(ScriptedTransport, service.transport)
+    original = transport.stream
+
+    @contextmanager
+    def stream(*args: Any, **kwargs: Any) -> Iterator[Iterable[bytes]]:
+        if transport.calls:
+            with original(*args, **kwargs) as chunks:
+                yield chunks
+            return
+        transport.calls.append(args[2])
+        raise error
+
+    transport.stream = stream  # type: ignore[method-assign]
+
+
+@pytest.mark.parametrize(
+    "code", ["provider_error", "refused", "incomplete", "output_limit", "connection", "timeout"]
+)
+def test_failed_planning_falls_back_to_a_bounded_search(
+    code: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    service, queries, transport = make_service(["Second [1]"])
+    failing_plan(service, OverviewError(code, "secret provider detail"))
+    with caplog.at_level("WARNING", logger="ai_overview.service"):
+        events = list(service.run(followup_state(), "What about those?"))
+    assert events[-1].name == "done"
+    assert queries == ["initial? What about those?"]
+    assert len(service.signer.loads(events[-1].data["token"]).turns) == 2
+    assert len(transport.calls) == 2
+    assert code in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_empty_planning_output_falls_back() -> None:
+    service, queries, _ = make_service(["", "Second [1]"])
+    events = list(service.run(followup_state(), "Why?"))
+    assert events[-1].name == "done"
+    assert queries == ["initial? Why?"]
+
+
+@pytest.mark.parametrize(
+    "code", ["provider_auth", "provider_limit", "configuration", "context_limit"]
+)
+def test_planning_errors_the_answer_would_repeat_fail_the_turn(code: str) -> None:
+    service, queries, transport = make_service(["unused"])
+    failing_plan(service, OverviewError(code, "message"))
+    with pytest.raises(OverviewError) as caught:
+        list(service.run(followup_state(), "Why?"))
+    assert caught.value.code == code
+    assert not queries
+    assert len(transport.calls) == 1
+
+
+def test_planning_that_spends_the_deadline_fails_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [100.0]
+    monkeypatch.setattr("ai_overview.service.time.monotonic", lambda: clock[0])
+    service, queries, transport = make_service(["unused"])
+    failing_plan(service, OverviewError("provider_error", "message"))
+    original = transport.stream
+
+    @contextmanager
+    def slow(*args: Any, **kwargs: Any) -> Iterator[Iterable[bytes]]:
+        clock[0] += 1000
+        with original(*args, **kwargs) as chunks:
+            yield chunks
+
+    monkeypatch.setattr(transport, "stream", slow)
+    with pytest.raises(OverviewError) as caught:
+        list(service.run(followup_state(), "Why?"))
+    assert caught.value.code == "timeout"
+    assert not queries
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.parametrize("lang", ["all", "auto", ""])
+def test_no_search_language_is_named_when_none_is_specific(lang: str) -> None:
+    service, _, transport = make_service(["First [1]"])
+    state = followup_state()
+    state = replace(state, turns=(), search=replace(state.search, lang=lang))
+    list(service.run(state, None))
+    system = transport.calls[0]["messages"][0]["content"]
+    assert "Search language:" not in system
+    assert system.endswith("Answer the latest question directly.")
+
+
+@pytest.mark.parametrize("lang", ["de", "en-US"])
+def test_a_specific_search_language_is_named(lang: str) -> None:
+    service, _, transport = make_service(["First [1]"])
+    state = followup_state()
+    state = replace(state, turns=(), search=replace(state.search, lang=lang))
+    list(service.run(state, None))
+    assert transport.calls[0]["messages"][0]["content"].endswith(f"\nSearch language: {lang}")
+
+
 def test_default_model_stays_pinned_after_config_change() -> None:
     service, _, transport = make_service(["First [1]", '{"query":null}', "Simpler [1]"])
     state = initial_state(
