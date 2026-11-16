@@ -1,0 +1,39 @@
+name: Integration (latest SearXNG)
+
+# Runs the integration checks against the newest SearXNG image, to catch
+# upstream changes to the internals the plugin uses before the pinned image in
+# compose.test.yml is bumped. Not triggered by pushes or pull requests.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      SEARXNG_IMAGE: searxng/searxng:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: python -m pip install uv==0.12.15
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Integration checks
+        run: make integration
+      - name: Compose logs
+        if: failure()
+        run: |
+          docker compose -f compose.test.yml images
+          docker compose -f compose.test.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: make integration-down
