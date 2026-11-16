@@ -104,7 +104,7 @@ test("configured model starts while model discovery is pending", async () => {
 
 test("saved model is selected before initial generation, with no overlapping start", async () => {
   const {conversation: c, calls} = harness();
-  const choice = {profile: "go", model: "second", available: true};
+  const choice = {profile: "go", model: "second"};
   const work = c.start(choice);
   const catalog = await nextCall(calls, 1);
   assert.equal(catalog.url, "/models");
@@ -387,7 +387,7 @@ test("suggestions started mid-answer are waited for instead of asked again", asy
 });
 
 test("a remembered thinking level is selected, or dropped when the model no longer offers it", async () => {
-  const models = json({choices: [{profile: "go", model: "first", protocol: "chat", available: true, thinking_levels: ["off", "low"]}], warnings: []});
+  const models = json({choices: [{profile: "go", model: "first", protocol: "chat", thinking_levels: ["off", "low"]}], warnings: []});
   for (const [saved, sent] of [["low", "low"], ["high", undefined]]) {
     const {conversation: c, calls} = harness();
     const run = c.start({profile: "go", model: "first", thinking: saved});

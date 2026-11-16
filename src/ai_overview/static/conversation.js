@@ -241,7 +241,7 @@ export class Conversation {
         || (saved.thinking ?? null) !== this.#selected.thinking);
       if (differs) {
         await modelsReady;
-        const choice = this.#choices.find(c => c.available && c.profile === saved.profile && c.model === saved.model);
+        const choice = this.#choices.find(c => c.profile === saved.profile && c.model === saved.model);
         // A remembered thinking level the model no longer offers falls back to its default.
         const thinking = choice?.thinking_levels?.includes(saved.thinking) ? saved.thinking : null;
         if (choice) {
