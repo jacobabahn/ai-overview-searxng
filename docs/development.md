@@ -44,6 +44,11 @@ against `searxng/searxng:latest` weekly and on manual dispatch, so upstream
 changes to the SearXNG internals the plugin uses show up without blocking
 pushes or pull requests. When either fails, the run prints the Compose logs.
 
+These jobs run entirely on the GitHub runner, the same way as locally: Compose
+pulls the published SearXNG image, mounts `src/ai_overview` from the checkout
+into it, and the checks drive that instance with headless Chromium. No image
+is built, and no real search engine or model provider is contacted.
+
 ## Packaging and CI
 
 ```sh
