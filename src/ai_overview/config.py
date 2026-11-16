@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Self
@@ -12,6 +13,10 @@ from .routing import DEFAULTS, SUFFIXES, go_endpoint
 
 DEFAULT_CONFIG_PATH = Path("/etc/searxng/overview.yml")
 
+# A misplaced secret in api_key_env must not reach the log, so warnings name the
+# variable only when it is spelled like one.
+_ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]*")
+
 
 @dataclass(frozen=True, slots=True)
 class Profile:
@@ -20,6 +25,8 @@ class Profile:
     endpoint: str
     protocol: str
     api_key: str = field(default="", repr=False)
+    # The variable api_key was read from; None for a profile that needs no key.
+    api_key_env: Optional[str] = field(default=None, repr=False)
     headers: dict[str, str] = field(default_factory=dict, repr=False)
     options: dict[str, Any] = field(default_factory=dict)
     max_output_tokens: int = 1200
@@ -66,7 +73,25 @@ class Config:
                 data = yaml.safe_load(f)
             except yaml.YAMLError:
                 raise ValueError("Invalid overview YAML") from None
+            except UnicodeDecodeError:
+                raise ValueError("Overview configuration must be UTF-8 text") from None
         return cls.from_dict(data)
+
+    def warnings(self) -> list[str]:
+        """Describe problems that leave the configuration loadable, for the operator's log."""
+        found = []
+        for name, profile in self.profiles.items():
+            variable = profile.api_key_env
+            if profile.api_key or (variable is None and DEFAULTS[profile.backend][2] is None):
+                continue
+            if variable is None:
+                reason = "api_key_env names no variable"
+            elif _ENV_NAME.fullmatch(variable):
+                reason = f"{variable} is unset or empty"
+            else:
+                reason = "its api_key_env variable is unset or empty"
+            found.append(f"Profile {name} has no API key: {reason}")
+        return found
 
     @classmethod
     def from_environment(cls) -> Self:
@@ -106,10 +131,10 @@ class Config:
             if not isinstance(name, str) or not name or not isinstance(raw, dict):
                 raise ValueError("Invalid provider profile")
             fields = set(Profile.__dataclass_fields__) - {"api_key"}
-            if set(raw) - (fields | {"api_key_env"}):
+            if set(raw) - fields:
                 raise ValueError(f"Unknown field in profile {name}")
             backend = raw.get("backend")
-            if backend not in DEFAULTS:
+            if not isinstance(backend, str) or backend not in DEFAULTS:
                 raise ValueError(f"Unknown backend in profile {name}")
             protocol, endpoint, key_env = DEFAULTS[backend]
             values = dict(raw)
@@ -118,6 +143,12 @@ class Config:
                 raise ValueError("api_key_env must be an environment variable name")
             values.setdefault("protocol", protocol)
             values.setdefault("endpoint", endpoint)
+            if not isinstance(values["protocol"], str):
+                raise ValueError(f"Unknown protocol in profile {name}")
+            if not isinstance(values["endpoint"], str):
+                raise ValueError(f"endpoint must be a URL in profile {name}")
+            if not isinstance(values.get("network", ""), str):
+                raise ValueError(f"network must be a network name in profile {name}")
             for flag in ("discover_models", "parallel_suggestions", "thinking_control"):
                 if type(values.get(flag, False)) is not bool:
                     raise ValueError(f"{flag} must be a boolean")
@@ -125,7 +156,8 @@ class Config:
                 raise ValueError("Model discovery currently supports OpenCode Go")
             routes = values.get("model_protocols", {})
             if not isinstance(routes, dict) or not all(
-                isinstance(k, str) and v in SUFFIXES for k, v in routes.items()
+                isinstance(k, str) and isinstance(v, str) and v in SUFFIXES
+                for k, v in routes.items()
             ):
                 raise ValueError("model_protocols must map model IDs to supported Go protocols")
             # Initial configuration and later selections use the same endpoint rules.
@@ -142,8 +174,13 @@ class Config:
                 raise ValueError("The Gemini backend requires the gemini protocol")
             if backend == "ollama" and values["protocol"] != "ollama":
                 raise ValueError("The Ollama backend requires the ollama protocol")
-            url = urlsplit(values["endpoint"])
-            if url.scheme not in {"http", "https"} or not url.hostname or url.username:
+            try:
+                url = urlsplit(values["endpoint"])
+                valid = url.scheme in {"http", "https"} and url.hostname and not url.username
+            except ValueError:
+                # urlsplit's own message can quote the URL, credentials included.
+                valid = False
+            if not valid:
                 raise ValueError("Provider endpoint must be an HTTP(S) URL without credentials")
             if url.query or url.fragment:
                 raise ValueError("Provider endpoints must not contain queries or fragments")
@@ -173,10 +210,11 @@ class Config:
             if not isinstance(options, dict) or set(options) - adapter.options:
                 raise ValueError(f"Unsupported provider option in profile {name}")
             adapter.validate_options(options)
+            values["api_key_env"] = key_env or None
             values["api_key"] = os.getenv(key_env, "") if key_env else ""
             profiles[name] = Profile(**values)
         default = data.get("default_profile")
-        if default not in profiles:
+        if not isinstance(default, str) or default not in profiles:
             raise ValueError("default_profile must name a configured profile")
         other = {k: v for k, v in data.items() if k not in {"default_profile", "profiles"}}
         for k, v in other.items():

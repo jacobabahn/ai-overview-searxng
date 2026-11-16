@@ -124,3 +124,131 @@ def test_answer_cache_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS", "600")
     config = Config.load()
     assert (config.answer_cache_entries, config.answer_cache_ttl_seconds) == (0, 600)
+
+
+def profile_config(**profile: object) -> dict[str, object]:
+    return {
+        "default_profile": "main",
+        "profiles": {"main": {"backend": "local", "model": "test-model", **profile}},
+    }
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        "profiles",
+        {"default_profile": "main", "profiles": []},
+        {"default_profile": "main", "profiles": {"main": "local"}},
+        {"default_profile": ["main"], "profiles": profile_config()["profiles"]},
+        {**profile_config(), "max_sources": "8"},
+        {**profile_config(), 1: 2},
+        profile_config(backend=["local"]),
+        profile_config(backend={"name": "local"}),
+        profile_config(protocol=["chat"]),
+        profile_config(backend="opencode_go", protocol=["chat"]),
+        profile_config(backend="opencode_go", model_protocols={"some-model": ["chat"]}),
+        profile_config(endpoint=8080),
+        profile_config(endpoint=["http://localhost:1234"]),
+        profile_config(endpoint="http://[::1"),
+        profile_config(network=5),
+        profile_config(headers=["X-Test"]),
+        profile_config(options=["think"]),
+        profile_config(model=["test-model"]),
+        profile_config(api_key_env=["LOCAL_KEY"]),
+        profile_config(api_key="secret"),
+        profile_config(unknown=True),
+        profile_config(**{"1": 2}),
+        {"default_profile": "main", "profiles": {"main": {1: 2, "backend": "local"}}},
+    ],
+)
+def test_malformed_configuration_raises_value_error(data: object) -> None:
+    with pytest.raises(ValueError):
+        Config.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "- profiles\n",
+        "just text\n",
+        "profiles: [unclosed\n",
+        "default_profile: main\nprofiles:\n  main:\n    backend: [local]\n    model: m\n",
+        "default_profile: main\nprofiles:\n  main:\n    backend: local\n    model: m\n"
+        "    endpoint: 8080\n",
+        "default_profile: main\nprofiles:\n  main:\n    backend: local\n    model: m\n"
+        "    surprise: true\n",
+    ],
+)
+def test_malformed_file_raises_value_error(tmp_path: Path, text: str) -> None:
+    path = tmp_path / "overview.yml"
+    path.write_text(text)
+    with pytest.raises(ValueError):
+        Config.load(path)
+
+
+def test_non_utf8_file_raises_value_error(tmp_path: Path) -> None:
+    path = tmp_path / "overview.yml"
+    path.write_bytes(b"default_profile: \xff\xfe\n")
+    with pytest.raises(ValueError, match="UTF-8"):
+        Config.load(path)
+
+
+def test_missing_file_raises_os_error(tmp_path: Path) -> None:
+    with pytest.raises(OSError, match="missing.yml"):
+        Config.load(tmp_path / "missing.yml")
+
+
+def test_endpoint_error_does_not_quote_credentials() -> None:
+    with pytest.raises(ValueError) as raised:
+        Config.from_dict(profile_config(endpoint="https://user:hunter2secret@[bad/v1"))
+    assert "hunter2secret" not in str(raised.value)
+
+
+def test_warns_about_unset_key_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "present")
+    monkeypatch.delenv("MY_LOCAL_KEY", raising=False)
+    config = Config.from_dict(
+        {
+            "default_profile": "ready",
+            "profiles": {
+                "ready": {"backend": "openrouter", "model": "m"},
+                "defaulted": {"backend": "openai", "model": "m"},
+                "empty": {"backend": "gemini", "model": "m"},
+                "named": {"backend": "local", "model": "m", "api_key_env": "MY_LOCAL_KEY"},
+                "opted_out": {"backend": "openai", "model": "m", "api_key_env": None},
+                "ollama": {"backend": "ollama", "model": "m"},
+                "local": {"backend": "local", "model": "m"},
+            },
+        }
+    )
+    # A missing key does not stop the other profiles from loading.
+    assert config.profiles["ready"].api_key == "present"
+    assert config.warnings() == [
+        "Profile defaulted has no API key: OPENAI_API_KEY is unset or empty",
+        "Profile empty has no API key: GEMINI_API_KEY is unset or empty",
+        "Profile named has no API key: MY_LOCAL_KEY is unset or empty",
+        "Profile opted_out has no API key: api_key_env names no variable",
+    ]
+
+
+def test_no_key_warning_when_keys_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "present")
+    monkeypatch.setenv("AI_OVERVIEW_BACKEND", "openai")
+    monkeypatch.setenv("AI_OVERVIEW_MODEL", "m")
+    assert Config.load().warnings() == []
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert Config.load().warnings() == [
+        "Profile default has no API key: OPENAI_API_KEY is unset or empty"
+    ]
+
+
+def test_key_warning_does_not_quote_a_secret_used_as_variable_name() -> None:
+    config = Config.from_dict(profile_config(backend="openai", api_key_env="sk-proj-hunter2secret"))
+    assert config.warnings() == [
+        "Profile main has no API key: its api_key_env variable is unset or empty"
+    ]
