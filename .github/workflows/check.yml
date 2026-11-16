@@ -26,3 +26,27 @@ jobs:
         run: make check
       - name: Build distributions
         run: uv build
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: python -m pip install uv==0.12.15
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Integration checks
+        run: make integration
+      - name: Compose logs
+        if: failure()
+        run: |
+          docker compose -f compose.test.yml images
+          docker compose -f compose.test.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: make integration-down

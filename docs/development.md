@@ -37,6 +37,13 @@ make integration-down
 Compose files accept `SEARXNG_IMAGE` to test a different image version or digest.
 The default is the version used during initial development.
 
+CI runs `make integration` against that pinned image on every push and pull
+request (the `integration` job in `.github/workflows/check.yml`). A separate
+workflow, `.github/workflows/integration-latest.yml`, runs the same checks
+against `searxng/searxng:latest` weekly and on manual dispatch, so upstream
+changes to the SearXNG internals the plugin uses show up without blocking
+pushes or pull requests. When either fails, the run prints the Compose logs.
+
 ## Packaging and CI
 
 ```sh
@@ -45,8 +52,8 @@ uv build
 
 The wheel includes browser assets and templates. Build output goes to ignored
 `dist/`. GitHub Actions runs linting, formatting, type checking, Python tests,
-JavaScript tests, and package builds. Docker/browser integration and live
-provider calls are separate checks and are not part of that workflow.
+JavaScript tests, package builds, and the Docker/browser integration checks
+described above. Live provider calls are not part of CI.
 
 Provider fixture tests cover backend request construction and streaming parsers;
 they do not establish live provider compatibility or answer quality. When
