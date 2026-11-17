@@ -187,11 +187,25 @@ Screen readers receive status updates rather than announcements for every token.
 ## Summary interface
 
 The panel inherits SearXNG's typography and theme colors. The initial answer
-previews four lines; the disclosure control expands longer answers. Each answer
-has its own source list, and citations open the corresponding source snippet.
-The header provides Stop, Copy, settings, and collapse controls. Settings allow
-regeneration and, when enabled, model selection. Motion respects reduced-motion
-preferences.
+previews six lines (`--ai-preview-lines` in `overview.css`, which `overview.js`
+reads) with its headings, lists, and code intact, fading out where it is cut;
+the disclosure control expands longer answers. Each answer has its own source
+list, and citations open the corresponding source snippet. The header provides
+Stop, Copy, settings, and collapse controls. Settings allow regeneration and,
+when enabled, model selection.
+
+Feedback sits where the reader is looking. Copy confirms on its own button. A
+failure is marked in the status line, with Retry under it; stopping uses the
+same place without the error mark. When part of an answer was written, both sit
+under that text. Sources stay hidden until their answer has text.
+
+Motion is limited to opacity, transform, and color. Streamed text fades in:
+each delta re-renders the answer, so `overview.js` tracks the latest arrivals by
+their offset in the rendered text and re-wraps them with the fade already under
+way. The mark beside the title turns while an answer is on its way. The settings
+sheet, opened sources, new turns, the composer, and chat suggestions ease in.
+Under `prefers-reduced-motion: reduce` every animation and transition in the
+panel is off and streamed text is not wrapped.
 
 The follow-up composer appears once the whole conversation is visible: after
 expansion, or immediately when the first answer fits its preview. It is hidden
