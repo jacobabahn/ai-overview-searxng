@@ -498,7 +498,9 @@ def main() -> None:
         page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
         expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
         expect(panel).to_have_attribute("data-clipped", "false")
-        assert panel.locator(".ai-answer").evaluate("el => getComputedStyle(el).maskImage") == "none"
+        assert (
+            panel.locator(".ai-answer").evaluate("el => getComputedStyle(el).maskImage") == "none"
+        )
 
         # Instant answers and AI Summary must not share one continuous card.
         page.goto("http://127.0.0.1:8899/search?q=stacked+answers%3F")
@@ -762,7 +764,9 @@ def check_chat_mode(page: Page, output: Path) -> None:
     expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
     # Reduced motion: streamed text is not wrapped for fading, and the mark holds still.
     assert panel.locator(".ai-answer .ai-fresh").count() == 0
-    assert panel.locator(".ai-sparkle").evaluate("el => getComputedStyle(el).animationName") == "none"
+    assert (
+        panel.locator(".ai-sparkle").evaluate("el => getComputedStyle(el).animationName") == "none"
+    )
     # Entering mid-answer starts its suggestions without waiting for it to finish.
     with page.expect_request(lambda request: request.url.endswith("/suggest")):
         tab.click()
