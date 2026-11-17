@@ -2,44 +2,12 @@ import assert from "node:assert/strict";
 import {readdirSync} from "node:fs";
 import {test} from "node:test";
 import {grammarFor, hasClosedFence, paintCode} from "../../src/ai_overview/static/syntax.js";
+import {Node, settle} from "./dom.js";
 
 const staticFiles = new URL("../../src/ai_overview/static/", import.meta.url);
 const packaged = readdirSync(staticFiles)
   .map(file => file.match(/^highlight-(.+)\.js$/)?.[1])
   .filter(name => name && name !== "core");
-
-// Just enough DOM for paintCode: text nodes, spans and a fragment.
-class Node {
-  constructor(className) {
-    this.className = className;
-    this.children = [];
-  }
-  append(...nodes) {
-    for (const node of nodes) this.children.push(...(node.fragment ? node.children : [node]));
-  }
-  replaceChildren(...nodes) {
-    this.children = [];
-    this.append(...nodes);
-  }
-  get childElementCount() {
-    return this.children.filter(child => child instanceof Node).length;
-  }
-  get textContent() {
-    return this.children.map(child => (child instanceof Node ? child.textContent : child.text)).join("");
-  }
-  set textContent(text) {
-    this.children = text ? [{text}] : [];
-  }
-  classes() {
-    return this.children.flatMap(child => (child instanceof Node ? [child.className, ...child.classes()] : []));
-  }
-}
-globalThis.document = {
-  createDocumentFragment: () => Object.assign(new Node(), {fragment: true}),
-  createElement: () => new Node(""),
-  createTextNode: text => ({text}),
-};
-const settle = () => new Promise(resolve => setTimeout(resolve, 100));
 
 test("only matching complete Markdown fences close a streaming code block", () => {
   for (const raw of [

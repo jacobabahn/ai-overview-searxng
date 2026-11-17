@@ -42,9 +42,15 @@ const grammars = {
   xml: ["html", "xhtml", "rss", "atom", "xjb", "xsd", "xsl", "plist", "wsf", "svg"],
   yaml: ["yml"],
 };
-// Grammars that hand embedded code to another grammar, such as a script in HTML.
+// Grammars that hand embedded code to another grammar, such as a script in HTML
+// or a css`...` template in JavaScript. Declared by the grammars but left out:
+// Ruby in YAML (ERB templates) and Markdown in Dart (doc comments), which would
+// fetch several grammars for a rare case; Mojolicious in Perl, which is not
+// packaged; and the body of an HTTP message, which relies on auto-detection.
 const embedded = {
   xml: ["css", "javascript"],
+  javascript: ["css", "xml", "graphql"],
+  typescript: ["css", "xml", "graphql"],
   markdown: ["xml"],
   shell: ["bash"],
   dockerfile: ["bash"],
@@ -63,14 +69,14 @@ export function grammarFor(label) {
 }
 
 let hljs;
+const registering = new Map();
 const loading = new Map();
+const loaded = new Set();
 
-// Nothing is fetched until a code block needs it: the core with the first grammar,
-// each grammar once. A failed fetch resolves false and the code stays plain.
-function load(name) {
-  if (!loading.has(name)) {
-    const parts = [import("./highlight-core.js"), import(`./highlight-${name}.js`)];
-    loading.set(name, Promise.all([...parts, ...(embedded[name] || []).map(load)]).then(
+// Fetches and registers one grammar, with the core. Resolves false on failure.
+function register(name) {
+  if (!registering.has(name)) {
+    registering.set(name, Promise.all([import("./highlight-core.js"), import(`./highlight-${name}.js`)]).then(
       ([core, grammar]) => {
         hljs = core.default;
         hljs.registerLanguage(name, grammar.default);
@@ -78,6 +84,25 @@ function load(name) {
       },
       () => false,
     ));
+  }
+  return registering.get(name);
+}
+
+// Nothing is fetched until a code block needs it: the core with the first grammar,
+// each grammar once. A grammar is loaded once it and everything it embeds, directly
+// or not, have settled; the set is collected first because grammars embed each
+// other (HTML and JavaScript). Only the grammar itself has to succeed: without an
+// embedded one, that part of the code is left plain.
+function load(name) {
+  if (!loading.has(name)) {
+    const names = [name];
+    for (const next of names) {
+      for (const inner of embedded[next] || []) if (!names.includes(inner)) names.push(inner);
+    }
+    loading.set(name, Promise.all(names.map(register)).then(([ok]) => {
+      if (ok) loaded.add(name);
+      return ok;
+    }));
   }
   return loading.get(name);
 }
@@ -125,15 +150,15 @@ export function paintCode(element, text, language, ready) {
   painted.set(element, state);
   // Bound synchronous work; huge or unsupported examples are still fully usable.
   const grammar = text.length <= 50000 ? grammarFor(language) : undefined;
-  if (ready && grammar && hljs?.getLanguage(grammar) && highlight(element, text, grammar)) return;
+  if (ready && loaded.has(grammar) && highlight(element, text, grammar)) return;
   if (element.textContent !== text || element.childElementCount) element.textContent = text;
   // Fetch as soon as a streaming block has a full label and some code, so the
   // grammar is usually here when the fence closes. A block that is ready before
   // its grammar is painted on arrival, unless it has been repainted since.
   if (!grammar || !text) return;
-  const loaded = load(grammar);
+  const arrival = load(grammar);
   if (ready) {
-    loaded.then(ok => {
+    arrival.then(ok => {
       if (ok && painted.get(element) === state) highlight(element, text, grammar);
     });
   }
