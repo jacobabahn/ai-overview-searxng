@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0] - YYYY-MM-DD
+## [0.1.0] - 2026-11-17
 
 First release. The plugin adds an AI overview to SearXNG: end a search with `?`
 and a cited answer streams in above the results, written from the returned
