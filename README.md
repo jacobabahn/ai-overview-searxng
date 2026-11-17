@@ -30,7 +30,8 @@ there. [CHANGELOG.md](CHANGELOG.md) lists the releases.
 git clone --branch v0.1.0 https://github.com/jacobabahn/ai-overview-searxng.git
 ```
 
-To update later, check out the newer release tag and restart SearXNG (step 3):
+To update later, check out the newer release tag and restart SearXNG (step 3);
+without Docker, also re-run the `pip install` from [Without Docker](#without-docker):
 
 ```sh
 git -C ai-overview-searxng fetch --tags

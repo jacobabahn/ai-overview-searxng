@@ -78,8 +78,9 @@ A release is a git tag and a GitHub release; nothing goes to PyPI.
 
 1. Set `__version__` in `src/ai_overview/__init__.py` to the new version.
 2. In `CHANGELOG.md`, move the entries under "Unreleased" into a new
-   `## [X.Y.Z] - YYYY-MM-DD` section with the release date, and add its link
-   at the bottom. Update the tag in the README's install step.
+   `## [X.Y.Z] - YYYY-MM-DD` section with the release date, add its link at the
+   bottom, and point the `[Unreleased]` link at the new tag. Update the tag in
+   the README's install step.
 3. Merge that to `main`, then tag the merged commit and push the tag:
 
    ```sh
