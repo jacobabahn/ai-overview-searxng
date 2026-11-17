@@ -19,9 +19,16 @@ outgoing:
 plugins:
   ai_overview.plugin.SXNGPlugin:
     active: true
+  order_fixture.OrderFixture:
+    active: true
 engines:
   - name: overview fixture
     engine: overview_fixture
     shortcut: fixture
     categories: general
     disabled: false
+  - name: score fixture
+    engine: score_fixture
+    shortcut: scorefix
+    categories: general
+    disabled: true

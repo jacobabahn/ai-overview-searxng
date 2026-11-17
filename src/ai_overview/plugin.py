@@ -7,6 +7,7 @@ from flask import Flask
 from searx import settings  # ty: ignore[unresolved-import]
 from searx.plugins import Plugin, PluginInfo  # ty: ignore[unresolved-import]
 from searx.result_types import Answer  # ty: ignore[unresolved-import]
+from searx.results import calculate_score  # ty: ignore[unresolved-import]
 
 from .catalog import ModelCatalog
 from .config import Config
@@ -56,7 +57,7 @@ class SXNGPlugin(Plugin):
             return []
         try:
             sources = build_sources(
-                search.result_container.get_ordered_results(),
+                ranked_results(search.result_container),
                 service.config.max_sources,
                 service.config.evidence_bytes,
             )
@@ -67,10 +68,7 @@ class SXNGPlugin(Plugin):
                 engines=tuple(Engine(e.name, e.category) for e in query.engineref_list),
             )
             state = initial_state(query.query, sources, service.config.default_profile, options)
-            # get_ordered_results() closes the result container in the target
-            # SearXNG version; a returned result would then be silently ignored.
-            search.result_container.answers.add(Answer(answer=render_panel(service, state)))
-            return []
+            return [Answer(answer=render_panel(service, state))]
         except Exception as error:
             self.log.warning("Could not prepare AI overview (%s)", type(error).__name__)
             return []
@@ -90,8 +88,28 @@ class SXNGPlugin(Plugin):
             pageno=1,
             timeout_limit=min(10, timeout),
         )
-        results = Search(sq).search().get_ordered_results()
+        container = Search(sq).search()
+        # A plain Search leaves its container open and nothing else reads it;
+        # closing it records the engines' score counters once, as for any search.
+        container.close()
         assert self.service is not None
         return build_sources(
-            results, self.service.config.max_sources, self.service.config.evidence_bytes
+            ranked_results(container),
+            self.service.config.max_sources,
+            self.service.config.evidence_bytes,
         )
+
+
+def ranked_results(container: Any) -> list[Any]:
+    """Main results by SearXNG's score, best first, leaving the container open.
+
+    SearchWithPlugins closes the container after every plugin's post_search, and
+    closing is not idempotent: get_ordered_results() would close it early, so
+    later plugins' results would be dropped and engine score counters added
+    twice. This skips get_ordered_results()'s display pass, which pulls results
+    of the same category, template and thumbnail presence next to each other.
+    """
+    # Engine threads that timed out may still add results; list() takes one snapshot.
+    results = list(container.main_results_map.values())
+    # Stable on ties, like SearXNG's own sort of the same map.
+    return sorted(results, key=lambda r: calculate_score(r, r.priority), reverse=True)
