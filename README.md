@@ -14,18 +14,27 @@ written from the returned snippets by a local model or a hosted provider.
   mode that turns the results page into a full-width conversation with suggested
   next questions (end a search with `??` to open straight into it).
 
-**Early-stage software for personal instances.** Tested with SearXNG
-`2026.9.19-e831fc2a1` and the Simple theme, including dark mode and mobile
-layouts; other versions and themes are unverified. Providers are tested against
-recorded responses, not live against every backend and model.
+**Early-stage software for personal instances.** Every change is tested with
+SearXNG `2026.9.19-e831fc2a1`, the version the examples pin, and the newest
+SearXNG image is tested weekly, both in the Simple theme, including dark mode
+and mobile layouts; other versions and themes are unverified. Providers are
+tested against recorded responses, not live against every backend and model.
 
 ## Install
 
-These steps add the plugin to an existing Docker Compose deployment. Clone this
-repository on the host first; nothing else needs installing there.
+These steps add the plugin to an existing Docker Compose deployment. Clone a
+release of this repository on the host first; nothing else needs installing
+there. [CHANGELOG.md](CHANGELOG.md) lists the releases.
 
 ```sh
-git clone https://github.com/jacobabahn/ai-overview-searxng.git
+git clone --branch v0.1.0 https://github.com/jacobabahn/ai-overview-searxng.git
+```
+
+To update later, check out the newer release tag and restart SearXNG (step 3):
+
+```sh
+git -C ai-overview-searxng fetch --tags
+git -C ai-overview-searxng checkout v0.2.0  # the release you want
 ```
 
 ### 1. Mount the plugin and choose a model

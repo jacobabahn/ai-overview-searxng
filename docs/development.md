@@ -38,7 +38,7 @@ make integration-down
 ```
 
 Compose files accept `SEARXNG_IMAGE` to test a different image version or digest.
-The default is the version used during initial development.
+The default is the pinned version the examples use.
 
 CI runs `make integration` against that pinned image on every push and pull
 request (the `integration` job in `.github/workflows/check.yml`). A separate
@@ -71,6 +71,28 @@ search content from logs and screenshots.
 
 See [Architecture](ARCHITECTURE.md) for implementation boundaries and the
 streaming and state contracts.
+
+## Releasing
+
+A release is a git tag and a GitHub release; nothing goes to PyPI.
+
+1. Set `__version__` in `src/ai_overview/__init__.py` to the new version.
+2. In `CHANGELOG.md`, move the entries under "Unreleased" into a new
+   `## [X.Y.Z] - YYYY-MM-DD` section with the release date, and add its link
+   at the bottom. Update the tag in the README's install step.
+3. Merge that to `main`, then tag the merged commit and push the tag:
+
+   ```sh
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+The tag starts `.github/workflows/release.yml`. It stops unless the tag is `v`
+plus `__version__` and the changelog has a dated section for it, runs the same
+`check` and `integration` jobs as CI, then builds the wheel and sdist and
+creates the GitHub release with them attached and that section as its notes.
+`python scripts/release_notes.py vX.Y.Z` runs the same tag and changelog check
+locally and prints the notes.
 
 ## Markdown rendering
 
