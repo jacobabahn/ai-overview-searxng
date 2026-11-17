@@ -126,8 +126,11 @@ Provider payloads and credentials are never included in browser errors.
 Initial generation uses the existing search results without another search or
 planning request. A follow-up makes a small planning request to the same profile,
 asking for a standalone search query or a decision to reuse evidence. This uses
-plain JSON text, not model tool calls. Invalid plans fall back to a bounded search
-using the original query and follow-up. Limit retrieval to one search per turn.
+plain JSON text, not model tool calls. An invalid plan, or a planning request that
+fails for a reason the answer request would not repeat, falls back to a bounded
+search using the original query and follow-up. Configuration, context-limit,
+authentication, and provider-limit errors end the turn instead. Limit retrieval
+to one search per turn.
 
 Generation owns one absolute monotonic deadline per turn, shared by planning
 and answer requests. Retrieval receives the remaining allowance, capped by its
