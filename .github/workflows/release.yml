@@ -1,0 +1,55 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 publishes a GitHub release for it, with the
+# wheel and sdist attached and that version's CHANGELOG.md section as notes.
+# Nothing is published to PyPI.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails before any checks run unless the tag is v + ai_overview.__version__
+  # and CHANGELOG.md has a dated section for that version.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Check tag, version, and changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python scripts/release_notes.py "$TAG"
+
+  # The same check and integration jobs as every push, against the pinned
+  # SearXNG image in compose.test.yml.
+  checks:
+    needs: verify
+    uses: ./.github/workflows/check.yml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: python -m pip install uv==0.12.15
+      - name: Build distributions
+        run: uv build
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/release_notes.py "$TAG" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" dist/*.whl dist/*.tar.gz \
+            --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
