@@ -82,19 +82,42 @@ original Markdown, while Copy code copies only that block's contents.
 When updating Marked, verify the npm archive integrity and replace both vendored
 files. Run the browser integration checks for streaming, copy behavior, and XSS.
 
-Syntax highlighting vendors the core and eight language modules from
+Syntax highlighting vendors the core and 39 language modules from
 `@highlightjs/cdn-assets` 11.12.0, with its BSD-3-Clause license in
 `static/highlight.LICENSE.txt`. The npm archive's SHA-512 integrity is
 `KvOKXODaiFmId9xaq3xc5xCL66wVLUuOngDbO9B/kewbFTqdGbn2nJxNhN3H5R1cgDTVj6R8vH0zgiNDEGjpDw==`.
-These are unmodified ESM files, renamed `highlight-<module>.js` for packaging.
+These are unmodified ESM files (`es/core.min.js` and `es/languages/<module>.min.js`),
+renamed `highlight-<module>.js` for packaging.
 
-`syntax.js` registers Python, JavaScript, TypeScript, XML/HTML, CSS, JSON, Bash,
-and SQL (including their registered aliases). Code stays plain while a fence is
-open; a closing fence or completed answer triggers highlighting. Unknown or
-unlabeled languages, grammar errors, and blocks over 50,000 characters fall back
-to plain text. The renderer rebuilds only text and span nodes from the escaped
-highlighting output and verifies that their text exactly matches the original.
-Highlighting never introduces executable HTML or changes clipboard contents.
+The packaged languages are Bash, C, C++, C#, CSS, Dart, Diff, Dockerfile, Elixir,
+Go, GraphQL, Haskell, HTTP, INI/TOML, Java, JavaScript, JSON, Kotlin, Lua,
+Makefile, Markdown, Nginx, Objective-C, Perl, PHP, PowerShell, Protocol Buffers,
+Python, R, Ruby, Rust, Scala, SCSS, shell sessions, SQL, Swift, TypeScript,
+XML/HTML, and YAML. `syntax.js` maps a fence label to a module through a static
+table of each grammar's name and aliases (`js`, `py`, `c++`, `yml`, `toml`, ...).
+`shell` selects Bash, since answers use it for plain commands; `console` and
+`shellsession` select the prompt-and-output grammar.
+
+Nothing is fetched until a code block needs it. The first labelled block imports
+the core and its grammar from the instance's own `static/` path, along with any
+grammar it embeds (CSS and JavaScript for HTML, Bash for Dockerfiles and shell
+sessions, XML for Markdown); each module is fetched once per page. The fetch
+starts while the block is still streaming, and a block that is complete before
+its grammar arrives is painted when it does. A page without code loads only
+`syntax.js`.
+
+To add a language, copy its module from the same release, add it to the table in
+`syntax.js` with the aliases the grammar declares, and list any grammar it embeds.
+`tests/browser/syntax.test.js` fails when a packaged grammar and the table
+disagree.
+
+Code stays plain while a fence is open; a closing fence or completed answer
+triggers highlighting. Unknown or unlabeled languages, grammars that fail to load,
+grammar errors, and blocks over 50,000 characters stay plain text; a label never
+becomes part of a URL, and language auto-detection is not used. The renderer
+rebuilds only text and span nodes from the escaped highlighting output and
+verifies that their text exactly matches the original. Highlighting never
+introduces executable HTML or changes clipboard contents.
 
 ## Busy-state recovery
 

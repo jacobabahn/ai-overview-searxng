@@ -182,7 +182,8 @@ Render a limited Markdown subset with DOM nodes: paragraphs, headings, lists,
 emphasis, blockquotes, and code. Marked supplies the lexer; model-provided HTML
 stays literal text, and Markdown links display only their labels. Validated
 numeric citations become source links in prose, never in code. Code blocks offer
-copy controls and syntax highlighting through vendored Highlight.js grammars.
+copy controls and syntax highlighting through vendored Highlight.js grammars,
+each fetched from the instance when a block first needs it.
 See [Markdown rendering](development.md#markdown-rendering) for dependency and
 rendering details. Display partial answers on failure with an explicit status.
 Screen readers receive status updates rather than announcements for every token.

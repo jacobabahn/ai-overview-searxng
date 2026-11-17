@@ -409,6 +409,7 @@
   --ai-syntax-value: #0550ae;
   --ai-syntax-comment: #62666d;
   --ai-syntax-name: #953800;
+  --ai-syntax-removed: #b3261e;
 }
 :root.theme-dark .ai-overview .ai-code-block {
   --ai-syntax-keyword: #c5a5ff;
@@ -416,6 +417,7 @@
   --ai-syntax-value: #8cbcff;
   --ai-syntax-comment: #a0a6b0;
   --ai-syntax-name: #ffc18c;
+  --ai-syntax-removed: #ffa198;
 }
 @media (prefers-color-scheme: dark) {
   :root:not(.theme-light):not(.theme-dark) .ai-overview .ai-code-block {
@@ -424,10 +426,14 @@
     --ai-syntax-value: #8cbcff;
     --ai-syntax-comment: #a0a6b0;
     --ai-syntax-name: #ffc18c;
+    --ai-syntax-removed: #ffa198;
   }
 }
 .ai-overview .ai-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta, .hljs-doctag) { color: var(--ai-syntax-keyword); }
-.ai-overview .ai-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr, .hljs-addition) { color: var(--ai-syntax-string); }
-.ai-overview .ai-code-block :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-variable, .hljs-symbol) { color: var(--ai-syntax-value); }
+.ai-overview .ai-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr, .hljs-addition, .hljs-code, .hljs-link) { color: var(--ai-syntax-string); }
+.ai-overview .ai-code-block :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-variable, .hljs-template-variable, .hljs-symbol, .hljs-bullet) { color: var(--ai-syntax-value); }
 .ai-overview .ai-code-block :is(.hljs-comment, .hljs-quote) { color: var(--ai-syntax-comment); }
-.ai-overview .ai-code-block :is(.hljs-title, .hljs-name, .hljs-attribute, .hljs-selector-class, .hljs-selector-id, .hljs-type) { color: var(--ai-syntax-name); }
+.ai-overview .ai-code-block :is(.hljs-title, .hljs-name, .hljs-attribute, .hljs-selector-class, .hljs-selector-id, .hljs-type, .hljs-section) { color: var(--ai-syntax-name); }
+.ai-overview .ai-code-block .hljs-deletion { color: var(--ai-syntax-removed); }
+.ai-overview .ai-code-block .hljs-emphasis { font-style: italic; }
+.ai-overview .ai-code-block .hljs-strong { font-weight: 600; }

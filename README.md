@@ -8,7 +8,8 @@ written from the returned snippets by a local model or a hosted provider.
 - Numbered citations open the source snippets the answer was written from.
 - Ask follow-up questions; each answer keeps its own sources. Stop, retry, or
   regenerate at any point.
-- Markdown answers include copyable code blocks with syntax highlighting.
+- Markdown answers include copyable code blocks with syntax highlighting for
+  about 40 languages, loaded only when an answer contains code.
 - Optional: a model picker, a choice of how much the model thinks, and a chat
   mode that turns the results page into a full-width conversation with suggested
   next questions (end a search with `??` to open straight into it).
