@@ -80,6 +80,46 @@ function sameSources(sources, previous) {
     sources.every((source, index) => source.id === previous[index].id && source.url === previous[index].url);
 }
 
+// Fades in text as it streams. Each delta re-renders the answer, so the latest
+// arrivals are tracked by their offset in the rendered text and re-wrapped with
+// their fade already under way; text older than the fade is left untouched.
+const REVEAL_MS = 320;
+function revealer() {
+  let shown = 0;
+  let batches = [];
+  return answer => {
+    const now = performance.now();
+    const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT, {
+      acceptNode: node => (node.parentElement.closest(".ai-code-block") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    const nodes = [];
+    let total = 0;
+    for (let node; (node = walker.nextNode());) {
+      nodes.push({node, start: total});
+      total += node.length;
+    }
+    batches = batches.filter(batch => now - batch.at < REVEAL_MS && batch.from < total);
+    if (total > shown) batches.push({from: shown, at: now});
+    shown = total;
+    if (!batches.length) return;
+    for (const {node, start} of nodes.reverse()) {
+      if (start + node.length <= batches[0].from || !node.data.trim()) continue;
+      // Split from the end so earlier offsets in this node stay valid.
+      for (const batch of [...batches].reverse()) {
+        const at = Math.max(batch.from - start, 0);
+        if (at >= node.length) continue;
+        const piece = at ? node.splitText(at) : node;
+        const span = document.createElement("span");
+        span.className = "ai-fresh";
+        span.style.animationDelay = `${Math.round(batch.at - now)}ms`;
+        piece.replaceWith(span);
+        span.append(piece);
+        if (!at) break;
+      }
+    }
+  };
+}
+
 const THINKING_LABELS = {off: "Off", on: "On", low: "Low", medium: "Medium", high: "High"};
 
 function mount(panel) {
@@ -104,6 +144,7 @@ function mount(panel) {
   const copy = panel.querySelector(".ai-copy");
   const copyStatus = panel.querySelector(".ai-copy-status");
   let expanded = false;
+  let copied;
   let disclosureAnimation;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   function cancelDisclosureAnimation() {
@@ -131,10 +172,13 @@ function mount(panel) {
       more.scrollIntoView({block: "nearest"});
     }
   }
+  const previewLines = Number(getComputedStyle(panel).getPropertyValue("--ai-preview-lines")) || 5;
   function updateDisclosure() {
     const answer = turns.querySelector(".ai-answer");
-    const clipped = answer && (answer.querySelector(".ai-code-block") || answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * 4 + 1);
+    const clipped = Boolean(answer) && answer.scrollHeight > parseFloat(getComputedStyle(answer).lineHeight) * previewLines + 1;
     const hasConversation = turns.childElementCount > 1;
+    // The preview fades out only when there is more below it.
+    panel.dataset.clipped = String(clipped);
     moreRow.hidden = panel.dataset.chat === "true" || (!clipped && !hasConversation);
     more.setAttribute("aria-expanded", String(expanded));
     more.querySelector("span").textContent = expanded ? "Show less" : hasConversation ? "Show conversation" : "Show full answer";
@@ -155,15 +199,25 @@ function mount(panel) {
       const question = turn.querySelector(".ai-question")?.textContent;
       return [question, rawAnswers.get(answer) || ""].filter(Boolean).join("\n\n");
     }).join("\n\n");
+    clearTimeout(copied);
     try {
       await copyText(text);
       copyStatus.textContent = "Answer copied.";
+      copy.dataset.copied = "true";
+      copied = setTimeout(() => delete copy.dataset.copied, 1600);
     } catch {
+      delete copy.dataset.copied;
       copyStatus.textContent = "Could not copy. Select the answer text to copy it.";
-      status.textContent = copyStatus.textContent;
-      status.hidden = false;
+      say(copyStatus.textContent, "error");
     }
   });
+  // The status line: progress in a quiet tone, failures marked as such.
+  function say(message, tone) {
+    status.hidden = false;
+    status.textContent = message;
+    if (tone) status.dataset.tone = tone;
+    else delete status.dataset.tone;
+  }
   const optionsToggle = panel.querySelector(".ai-options-toggle");
   const options = panel.querySelector(".ai-options");
   const regenerate = panel.querySelector(".ai-regenerate");
@@ -303,7 +357,7 @@ function mount(panel) {
     closeOptions();
     showConversation();
     try { await conversation.restart(undefined, {fresh: true}); }
-    catch (error) { status.hidden = false; status.textContent = error.message; }
+    catch (error) { say(error.message, "error"); }
   });
 
   if (picker) {
@@ -380,14 +434,15 @@ function mount(panel) {
     failedTurn?.remove();
     failedTurn = null;
     if (!question && !turns.childElementCount) {
-      expand(false);
+      // A search that opened straight into chat mode stays fully shown.
+      expand(panel.dataset.chat === "true");
       moreRow.hidden = true;
       copy.disabled = true;
     }
     if (question) expand(true);
     copyStatus.textContent = "";
-    status.hidden = false;
-    status.textContent = question ? "Preparing follow-up…" : "Reading search results…";
+    delete copy.dataset.copied;
+    say(question ? "Preparing follow-up…" : "Reading search results…");
     const turn = document.createElement("article");
     if (question) {
       const heading = document.createElement("h3");
@@ -401,10 +456,7 @@ function mount(panel) {
       cancelDisclosureAnimation();
       answer.classList.add("ai-answer-revealed");
     });
-    const turnStatus = document.createElement("p");
-    turnStatus.className = "ai-turn-status";
-    turnStatus.hidden = true;
-    turn.append(answer, turnStatus);
+    turn.append(answer);
     // Follow-up progress and errors belong to their own turn, not the panel top.
     if (question) turn.append(status, actions);
     answer.addEventListener("click", event => {
@@ -418,7 +470,7 @@ function mount(panel) {
       item.focus();
     });
     turns.append(turn);
-    activeTurn = {turn, answer, turnStatus, text: "", sources: [], question};
+    activeTurn = {turn, answer, text: "", sources: [], question, reveal: revealer()};
     if (question) turn.scrollIntoView({block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth"});
   }
 
@@ -460,15 +512,11 @@ function mount(panel) {
     }
     if (event.name === "turn_start") beginTurn(event.data.question);
     if (event.name === "waiting") {
-      status.hidden = false;
       const {attempt, maxAttempts, delay} = event.data;
-      status.textContent = `AI Summary is busy. Trying again in ${delay / 1000} seconds (${attempt} of ${maxAttempts}).`;
+      say(`AI Summary is busy. Trying again in ${delay / 1000} seconds (${attempt} of ${maxAttempts}).`);
       if (!activeTurn?.text) preview.textContent = status.textContent;
     }
-    if (event.name === "status") {
-      status.hidden = false;
-      status.textContent = event.data.message;
-    }
+    if (event.name === "status") say(event.data.message);
     if (event.name === "sources") {
       activeTurn.sources = event.data.sources;
       const details = sourceList(activeTurn.sources, Boolean(activeTurn.question) && sameSources(activeTurn.sources, previousSources));
@@ -481,23 +529,27 @@ function mount(panel) {
       activeTurn.text += event.data.text;
       rawAnswers.set(activeTurn.answer, activeTurn.text);
       renderMarkdown(activeTurn.answer, activeTurn.text, activeTurn.sources, renderCitations, {complete: false});
+      if (!reducedMotion.matches) activeTurn.reveal(activeTurn.answer);
       updateDisclosure();
       preview.textContent = rawAnswers.get(turns.querySelector(".ai-answer")) || "";
     }
     if (event.name === "turn_done") {
       renderMarkdown(activeTurn.answer, activeTurn.text, activeTurn.sources, renderCitations);
+      // The last words keep fading in across this final render.
+      if (!reducedMotion.matches) activeTurn.reveal(activeTurn.answer);
+      delete status.dataset.tone;
       status.textContent = state.canFollowUp ? "" : "Start a new search to continue.";
       if (!state.canFollowUp) turns.after(status);
       status.hidden = state.canFollowUp;
       previousSources = activeTurn.sources;
     }
     if (event.name === "turn_error") {
-      status.hidden = false;
-      status.textContent = event.data.message;
+      // Stopping is the reader's own doing, not a failure.
+      say(event.data.message, event.data.stopped ? "stopped" : "error");
       if (!activeTurn.text) preview.textContent = status.textContent;
-      activeTurn.turnStatus.textContent = activeTurn.text ? "Incomplete answer" : event.data.message;
-      // A follow-up's docked status already sits under its partial answer.
-      activeTurn.turnStatus.hidden = !activeTurn.text || Boolean(activeTurn.question);
+      // What went wrong, and Retry, sit under whatever was written; a follow-up
+      // already has them docked there.
+      if (activeTurn.text) activeTurn.answer.after(status, actions);
       failedTurn = activeTurn.turn;
       // Let a follow-up that produced nothing be edited and asked again.
       if (activeTurn.question && !activeTurn.text && !input.value.trim()) {
@@ -514,7 +566,7 @@ function mount(panel) {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(selectionKey) || "null"); } catch { /* Storage is optional. */ }
   conversation.start(saved).catch(error => {
-    if (error.name !== "AbortError") { status.hidden = false; status.textContent = error.message; }
+    if (error.name !== "AbortError") say(error.message, "error");
   });
 }
 

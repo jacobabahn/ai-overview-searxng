@@ -51,6 +51,10 @@ def main() -> None:
         page.context.grant_permissions(["clipboard-read", "clipboard-write"])
         panel.get_by_role("button", name="Copy answer").click()
         expect(panel.locator(".ai-copy-status")).to_have_text("Answer copied.")
+        # Copying confirms on the button itself, then settles back.
+        expect(panel.locator(".ai-copy")).to_have_attribute("data-copied", "true")
+        expect(panel.locator(".ai-copy .ai-copied-icon")).to_have_css("opacity", "1")
+        expect(panel.locator(".ai-copy")).not_to_have_attribute("data-copied", "true")
         assert "[1]" in page.evaluate("navigator.clipboard.readText()")
         expect(page.locator("#urls .result")).to_have_count(2)
         panel.locator(".ai-answer a").first.click()
@@ -215,12 +219,29 @@ def main() -> None:
         page.goto("http://127.0.0.1:8899/search?q=fail-stream%3F")
         expect(page.locator(".ai-status")).to_contain_text("usage limit", timeout=15000)
         expect(page.get_by_role("button", name="Retry")).to_be_visible()
+        # A failure is marked as one, and sources for an answer never written stay away.
+        expect(page.locator(".ai-status")).to_have_attribute("data-tone", "error")
+        expect(page.locator(".ai-sources")).to_be_hidden()
 
         page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
         expect(page.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
+        # Streamed text fades in, and the mark in the title turns while it does.
+        assert page.locator(".ai-answer .ai-fresh").count() > 0
+        assert (
+            page.locator(".ai-sparkle").evaluate("el => getComputedStyle(el).animationName")
+            == "ai-sparkle-turn"
+        )
         page.get_by_role("button", name="Stop generating", exact=True).click()
         expect(page.locator(".ai-status")).to_have_text("Stopped. This answer is incomplete.")
         expect(page.get_by_role("button", name="Retry")).to_be_visible()
+        # Stopping is not an error; what happened sits under the partial answer, once.
+        expect(page.locator(".ai-turns > article .ai-answer + .ai-status")).to_be_visible()
+        expect(page.locator(".ai-status")).to_have_attribute("data-tone", "stopped")
+        expect(page.locator(".ai-turns > article .ai-retry")).to_be_visible()
+        assert (
+            page.locator(".ai-sparkle").evaluate("el => getComputedStyle(el).animationName")
+            == "none"
+        )
         # Selection and its restart reserve one operation, even if Retry is dispatched
         # programmatically while the selection response is delayed.
         pending_selection: list[Route] = []
@@ -321,7 +342,7 @@ def main() -> None:
         failed = panel.locator(".ai-turns > article").last
         expect(failed.locator(".ai-status")).to_have_text("The connection ended early.")
         expect(failed.get_by_role("button", name="Retry")).to_be_visible()
-        expect(failed.locator(".ai-turn-status")).to_be_hidden()
+        expect(failed.locator(".ai-status")).to_have_attribute("data-tone", "error")
         with page.expect_request(lambda request: request.url.endswith("/stream")):
             failed.get_by_role("button", name="Retry").click()
         page.wait_for_function("document.querySelector('.ai-stop').hidden === false")
@@ -415,13 +436,24 @@ def main() -> None:
         panel.get_by_role("button", name="Show less", exact=True).click()
         expect(panel.locator(".ai-follow-up")).to_be_hidden()
         panel.get_by_role("button", name="Summary settings").click()
-        assert (
-            panel.locator(".ai-options").evaluate("el => getComputedStyle(el).animationName")
-            == "none"
+        motion = panel.locator(".ai-options").evaluate(
+            "el => [getComputedStyle(el).animationName, getComputedStyle(el).transitionDuration]"
         )
+        assert motion == ["none", "0s"], motion
         page.keyboard.press("Escape")
         expect(panel.get_by_role("button", name="Summary settings")).to_be_focused()
-        # A paragraph break on line four must not strand the ellipsis on an empty line.
+        # With motion allowed, the sheet eases in from its toggle and out again.
+        page.emulate_media(reduced_motion="no-preference")
+        panel.get_by_role("button", name="Summary settings").click()
+        assert "opacity" in panel.locator(".ai-options").evaluate(
+            "el => getComputedStyle(el).transitionProperty"
+        )
+        expect(panel.locator(".ai-options")).to_have_css("opacity", "1")
+        page.keyboard.press("Escape")
+        expect(panel.locator(".ai-options")).to_be_hidden()
+        page.emulate_media(reduced_motion="reduce")
+        # The preview keeps the answer's paragraphs and fades out where it is cut,
+        # instead of flattening them into one run of text.
         paragraph_answer = "First line.\nSecond line.\nThird line.\n\n" + long_answer
         page.unroute("**/ai-overview/stream")
         paragraph_stream = (
@@ -438,34 +470,35 @@ def main() -> None:
         answer = panel.locator(".ai-answer")
         for width in [320, 390, 1280]:
             page.set_viewport_size({"width": width, "height": 900})
-            # Check actual glyph positions, not just the white-space CSS declaration.
-            last_line_has_text = answer.evaluate(r"""answer => {
-              const box = answer.getBoundingClientRect();
-              const lineHeight = parseFloat(getComputedStyle(answer).lineHeight);
-              const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT);
-              let node;
-              while ((node = walker.nextNode())) {
-                for (let i = 0; i < node.length; i++) {
-                  if (/\s/.test(node.textContent[i])) continue;
-                  const range = document.createRange();
-                  range.setStart(node, i); range.setEnd(node, i + 1);
-                  const rect = range.getBoundingClientRect();
-                  if (rect.height && rect.bottom <= box.bottom + 1 &&
-                      rect.bottom > box.bottom - lineHeight) return true;
-                }
-              }
-              return false;
+            expect(panel).to_have_attribute("data-clipped", "true")
+            preview = answer.evaluate("""answer => {
+              const style = getComputedStyle(answer);
+              const lines = Number(getComputedStyle(answer.closest('.ai-overview'))
+                .getPropertyValue('--ai-preview-lines'));
+              return {lines: answer.clientHeight / parseFloat(style.lineHeight), limit: lines,
+                clipped: answer.scrollHeight > answer.clientHeight,
+                fades: (style.maskImage || style.webkitMaskImage).includes('gradient'),
+                paragraph: getComputedStyle(answer.querySelector('p')).display};
             }""")
-            assert last_line_has_text
+            assert preview["clipped"] and preview["fades"], preview
+            assert abs(preview["lines"] - preview["limit"]) < 0.1, preview
+            assert preview["paragraph"] == "block", preview
         panel.get_by_role("button", name="Show full answer", exact=True).click()
         expect(answer).to_have_text(paragraph_answer)
         assert (
             answer.locator("p").first.evaluate("el => getComputedStyle(el).whiteSpace")
             == "pre-wrap"
         )
+        assert answer.evaluate("el => getComputedStyle(el).maskImage") == "none"
         panel.get_by_role("button", name="Show less", exact=True).click()
         page.set_viewport_size({"width": 390, "height": 844})
-        page.screenshot(path=str(output / "overview-ellipsis-fixed.png"), full_page=True)
+        page.screenshot(path=str(output / "overview-preview-fade.png"), full_page=True)
+        # A short answer is shown whole, with nothing to fade or disclose.
+        page.unroute("**/ai-overview/stream")
+        page.goto("http://127.0.0.1:8899/search?q=why+is+the+sky+blue%3F")
+        expect(panel.locator(".ai-status")).to_have_text("", timeout=20000)
+        expect(panel).to_have_attribute("data-clipped", "false")
+        assert panel.locator(".ai-answer").evaluate("el => getComputedStyle(el).maskImage") == "none"
 
         # Instant answers and AI Summary must not share one continuous card.
         page.goto("http://127.0.0.1:8899/search?q=stacked+answers%3F")
@@ -639,6 +672,8 @@ def check_chat_mode(page: Page, output: Path) -> None:
     expect(tab).to_have_attribute("aria-pressed", "true", timeout=20000)
     expect(panel.locator(".ai-chat-query")).to_have_text("why is the sky blue?")
     expect(results).to_be_hidden()
+    # Opened straight into chat, the first answer is shown whole, never as a preview.
+    expect(panel).to_have_attribute("data-expanded", "true")
     # Beside a finished answer, the margin keeps four cited notes and folds the rest;
     # following a folded citation unfolds the list and focuses its note.
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -725,6 +760,9 @@ def check_chat_mode(page: Page, output: Path) -> None:
     page.goto("http://127.0.0.1:8899/search?q=slow-stream%3F")
     expect(tab).to_be_visible()
     expect(panel.locator(".ai-answer")).to_contain_text("sky", timeout=15000)
+    # Reduced motion: streamed text is not wrapped for fading, and the mark holds still.
+    assert panel.locator(".ai-answer .ai-fresh").count() == 0
+    assert panel.locator(".ai-sparkle").evaluate("el => getComputedStyle(el).animationName") == "none"
     # Entering mid-answer starts its suggestions without waiting for it to finish.
     with page.expect_request(lambda request: request.url.endswith("/suggest")):
         tab.click()

@@ -30,12 +30,27 @@ function codeBlock() {
   pre.append(code);
   toolbar.append(language, copy);
   block.append(toolbar, pre, status);
+  // The button keeps its name for assistive technology, which hears the status;
+  // sighted readers see the label confirm in place.
+  copy.setAttribute("aria-label", "Copy code");
+  let confirmed;
   copy.addEventListener("click", async () => {
+    clearTimeout(confirmed);
     try {
       await copyText(code.textContent);
       status.textContent = "Code copied.";
+      delete status.dataset.tone;
+      copy.textContent = "Copied";
+      copy.dataset.copied = "true";
+      confirmed = setTimeout(() => {
+        copy.textContent = "Copy code";
+        delete copy.dataset.copied;
+      }, 1600);
     } catch {
       status.textContent = "Could not copy. Select the code to copy it.";
+      status.dataset.tone = "error";
+      copy.textContent = "Copy code";
+      delete copy.dataset.copied;
     }
   });
   return block;
@@ -60,10 +75,7 @@ export function renderMarkdown(element, text, sources, renderCitations, {complet
             block.querySelector(".ai-code-status").textContent = "";
           }
           paintCode(code, token.text, language, complete || hasClosedFence(token.raw));
-          const preview = document.createElement("span");
-          preview.className = "ai-code-preview";
-          preview.textContent = language === "Code" ? "Code block. " : `${language} code block. `;
-          nodes.push(preview, block);
+          nodes.push(block);
           continue;
         }
         case "codespan":
