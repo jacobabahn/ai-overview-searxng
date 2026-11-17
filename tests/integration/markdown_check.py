@@ -58,8 +58,9 @@ def main() -> None:
         expect(answer.locator("li")).to_have_count(2)
         expect(answer.locator("a[data-source-id]")).to_have_count(1)
         expect(answer.locator("p code")).to_have_text("items[1]")
-        expect(answer.locator(".ai-code-preview")).to_be_visible()
-        expect(answer.locator(".ai-code-block")).to_be_hidden()
+        # The preview shows the answer as written, code included, cut off by height.
+        expect(panel).to_have_attribute("data-clipped", "true")
+        assert answer.evaluate("el => el.scrollHeight > el.clientHeight")
         panel.get_by_role("button", name="Show full answer").click()
         block = answer.locator(".ai-code-block")
         expect(block.locator("pre code")).to_have_text(code)
@@ -72,6 +73,8 @@ def main() -> None:
         pre.evaluate("el => { el.scrollLeft = 100; window.originalCodeBlock = el.parentElement; }")
         block.get_by_role("button", name="Copy code").click()
         expect(block.locator(".ai-code-status")).to_have_text("Code copied.")
+        # The button confirms in place, keeping its accessible name.
+        expect(block.locator(".ai-code-toolbar button")).to_have_text("Copied")
         assert page.evaluate("navigator.clipboard.readText()") == code
         # Update the unfinished block without losing its focused control or scroll.
         addition = "\nprint('done')"
@@ -115,6 +118,8 @@ def main() -> None:
         )
         block.get_by_role("button", name="Copy code").click()
         expect(block.locator(".ai-code-status")).to_contain_text("Select the code")
+        expect(block.locator(".ai-code-status")).to_be_visible()
+        expect(block.locator(".ai-code-toolbar button")).to_have_text("Copy code")
         pre.evaluate("el => { el.scrollLeft = 0; }")
         page.evaluate("() => { navigator.clipboard.writeText = window.originalWriteText; }")
         block.get_by_role("button", name="Copy code").click()

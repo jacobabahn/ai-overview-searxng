@@ -366,7 +366,8 @@ export class Conversation {
       const stopped = operation.phase === "waiting"
         ? "Waiting canceled. You can retry when you’re ready."
         : "Stopped. This answer is incomplete.";
-      this.#emit("turn_error", {code: error.code, message: error.name === "AbortError" ? stopped : error.message});
+      const aborted = error.name === "AbortError";
+      this.#emit("turn_error", {code: error.code, stopped: aborted, message: aborted ? stopped : error.message});
     }
   }
 }

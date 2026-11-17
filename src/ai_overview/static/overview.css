@@ -18,7 +18,13 @@
   --ai-border: var(--color-result-search-url-border, #dadde2);
   --ai-link: var(--color-result-link-font, #3050ff);
   --ai-bg: var(--color-base-background, #ffffff);
-  --ai-tint: color-mix(in srgb, var(--ai-bg) 94%, var(--ai-link));
+  --ai-error: var(--color-error, #db3434);
+  --ai-tint: color-mix(in srgb, var(--ai-bg) 92%, var(--ai-link));
+  --ai-tint-strong: color-mix(in srgb, var(--ai-bg) 84%, var(--ai-link));
+  /* Lines of the first answer shown before "Show full answer"; overview.js reads it. */
+  --ai-preview-lines: 6;
+  --ai-line: 1.65;
+  --ai-ease: cubic-bezier(0.2, 0, 0, 1);
   position: relative;
   color: var(--ai-text);
   font: inherit;
@@ -29,40 +35,75 @@
   padding-block: 0;
 }
 .ai-overview :is(.ai-content, .ai-collapsed-preview) { margin-inline: 0.5rem; }
-.ai-overview .ai-content { padding-block-start: 0.5rem; }
+.ai-overview .ai-content { padding-block-start: 0.25rem; }
 .ai-overview [hidden] { display: none !important; }
 .ai-overview .ai-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
 }
-.ai-overview .ai-overview-header,
-.ai-overview .ai-header-actions { display: flex; align-items: center; gap: 0.5rem; }
-.ai-overview .ai-overview-header { justify-content: space-between; }
-.ai-overview .ai-overview-header h2 { font: inherit; font-size: 1rem; font-weight: 650; margin: 0; color: var(--ai-text); }
 .ai-overview svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.ai-overview .ai-collapse[aria-expanded="false"] svg { transform: rotate(180deg); }
-.ai-overview .ai-provenance { font-size: 0.85rem; color: var(--ai-muted); margin-block: 0.25rem 0.65rem; }
+
+/* Header: the name on the left, three quiet icon controls on the right. */
+.ai-overview .ai-overview-header,
+.ai-overview .ai-header-actions { display: flex; align-items: center; }
+.ai-overview .ai-overview-header { justify-content: space-between; gap: 0.5rem; }
+.ai-overview .ai-overview-header h2 {
+  display: flex; align-items: center; gap: 0.5rem; min-width: 0;
+  font: inherit; font-size: 1rem; font-weight: 650; margin: 0 0 0 0.5rem; color: var(--ai-text);
+}
+/* The mark is the panel's one accent and its activity light: it turns while an
+   answer is on its way and rests when the panel is idle. */
+.ai-overview .ai-sparkle { display: inline-block; color: var(--ai-link); font-size: 1.15em; line-height: 1; }
+.ai-overview:is([data-phase="starting"], [data-phase="streaming"], [data-phase="selecting"]) .ai-sparkle {
+  animation: ai-sparkle-turn 1.6s var(--ai-ease) infinite;
+}
+.ai-overview[data-phase="waiting"] .ai-sparkle { opacity: 0.45; }
+@keyframes ai-sparkle-turn {
+  0% { transform: rotate(0) scale(1); opacity: 1; }
+  50% { transform: rotate(90deg) scale(0.72); opacity: 0.55; }
+  100% { transform: rotate(180deg) scale(1); opacity: 1; }
+}
+
 .ai-overview button {
   font: inherit; font-size: 0.875rem; color: var(--ai-link);
   background: transparent; border: 1px solid var(--ai-border);
-  border-radius: 0.4rem; padding: 0.5rem 0.75rem; cursor: pointer;
+  border-radius: 0.5rem; padding: 0.5rem 0.75rem; cursor: pointer;
 }
 .ai-overview button:disabled { opacity: 0.5; cursor: default; }
+.ai-overview button:enabled:hover { color: var(--ai-link); background: var(--ai-tint); }
 .ai-overview :is(button, input, select, summary, a, li):focus-visible {
   outline: 2px solid var(--ai-link); outline-offset: 3px;
 }
-.ai-overview .ai-header-actions { gap: 0; }
-.ai-overview .ai-header-actions button {
-  border: 0; color: var(--ai-muted); font-size: 1.4rem;
-  display: grid; place-items: center; flex-shrink: 0;
+/* Icon buttons keep a 44px target; the hover surface is drawn smaller inside it. */
+.ai-overview :is(.ai-header-actions button, .ai-settings-close) {
+  position: relative; display: grid; place-items: center; flex-shrink: 0;
   width: 2.75rem; height: 2.75rem; min-width: 44px; min-height: 44px; padding: 0;
+  border: 0; color: var(--ai-muted); background: transparent;
 }
+.ai-overview :is(.ai-header-actions button, .ai-settings-close)::before {
+  content: ""; position: absolute; inset: 0.25rem; border-radius: 0.5rem; background: var(--ai-tint);
+  opacity: 0; scale: 0.85;
+}
+.ai-overview :is(.ai-header-actions button, .ai-settings-close) > svg { position: relative; }
+.ai-overview :is(.ai-header-actions button, .ai-settings-close):enabled:hover { color: var(--ai-link); background: transparent; }
+.ai-overview :is(.ai-header-actions button, .ai-settings-close):enabled:hover::before,
+.ai-overview .ai-options-toggle[aria-expanded="true"]::before { opacity: 1; scale: 1; }
+.ai-overview .ai-options-toggle[aria-expanded="true"] { color: var(--ai-link); }
+.ai-overview :is(.ai-header-actions button, .ai-settings-close):enabled:active > svg { scale: 0.88; }
+.ai-overview :is(.ai-header-actions button, .ai-settings-close):focus-visible { outline-offset: -4px; border-radius: 0.75rem; }
 .ai-overview .ai-generation-action { display: grid; }
 .ai-overview .ai-generation-action button { grid-area: 1 / 1; }
 .ai-overview .ai-generation-action:has(.ai-stop:not([hidden])) .ai-copy { visibility: hidden; }
 .ai-overview .ai-stop svg { fill: currentColor; stroke: none; }
-.ai-overview button:enabled:hover { color: var(--ai-link); background: var(--ai-tint); }
-.ai-overview .ai-header-actions .ai-options-toggle[aria-expanded="true"] { color: var(--ai-link); background: var(--ai-tint); }
+.ai-overview .ai-stop { color: var(--ai-text); }
+/* Copy confirms in place: the icon becomes a check for a moment. */
+.ai-overview .ai-copy > svg { grid-area: 1 / 1; }
+.ai-overview .ai-copy .ai-copied-icon { opacity: 0; scale: 0.5; }
+.ai-overview .ai-copy[data-copied] { color: var(--ai-link); }
+.ai-overview .ai-copy[data-copied] .ai-copy-icon { opacity: 0; scale: 0.5; }
+.ai-overview .ai-copy[data-copied] .ai-copied-icon { opacity: 1; scale: 1; }
+.ai-overview .ai-collapse[aria-expanded="false"] svg { rotate: 180deg; }
+
 /* Summary settings: a small sheet under the toggle. The heading states what is
    answering now; the controls below are a draft until the footer button applies it. */
 .ai-overview .ai-options {
@@ -73,6 +114,7 @@
   padding: 1rem 1rem 0.875rem; color: var(--ai-text); font-size: 0.875rem; line-height: 1.5;
   background: var(--ai-bg); border: 1px solid var(--ai-border); border-radius: 0.75rem;
   box-shadow: 0 1px 2px #0000000f, 0 12px 32px -8px #00000033;
+  transform-origin: calc(100% - 3.5rem) 0;
 }
 .ai-overview .ai-options:focus { outline: none; }
 .ai-overview .ai-options :is(button, input, select):focus-visible { outline-offset: 1px; }
@@ -81,56 +123,29 @@
 .ai-overview .ai-settings-heading { align-items: flex-start; }
 .ai-overview .ai-settings-title { min-width: 0; padding-block-start: 0.2rem; }
 .ai-overview .ai-settings-heading h3 { margin: 0; font: inherit; font-size: 1rem; font-weight: 650; line-height: 1.3; }
-.ai-overview .ai-current-model { margin: 0.2rem 0 0; color: var(--ai-muted); font-size: 0.8rem; overflow-wrap: anywhere; }
-.ai-overview .ai-settings-close {
-  display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem;
-  margin: -0.5rem -0.5rem 0 0; padding: 0; border: 0; border-radius: var(--ai-control-radius); color: var(--ai-muted);
-}
+.ai-overview .ai-current-model { margin: 0.2rem 0 0; color: var(--ai-muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.ai-overview .ai-settings-close { margin: -0.5rem -0.5rem 0 0; }
 .ai-overview .ai-model-settings { margin-block-start: 1rem; }
 .ai-overview .ai-model-label { margin-block-end: 0.375rem; }
 .ai-overview .ai-model-label label,
 .ai-overview .ai-thinking-settings legend { font-weight: 600; }
-.ai-overview .ai-refresh-models { min-height: 44px; margin-block: -0.6rem; padding: 0.4rem 0; border: 0; font-size: 0.8rem; color: var(--ai-muted); }
+.ai-overview .ai-refresh-models { min-height: 44px; margin-block: -0.6rem; padding: 0.4rem 0; border: 0; font-size: 0.8125rem; color: var(--ai-muted); }
 .ai-overview .ai-refresh-models:enabled:hover { color: var(--ai-link); background: transparent; text-decoration: underline; text-underline-offset: 0.2em; }
 .ai-overview .ai-settings-footer { margin-block-start: 1rem; padding-block-start: 1rem; border-block-start: 1px solid var(--ai-border); }
 .ai-overview .ai-settings-footer > button {
   width: 100%; min-height: 44px; border-radius: var(--ai-control-radius); font-weight: 600;
   background: var(--ai-tint); border-color: transparent;
 }
-.ai-overview .ai-settings-footer > button:enabled:hover { background: color-mix(in srgb, var(--ai-bg) 86%, var(--ai-link)); }
+.ai-overview .ai-settings-footer > button:enabled:hover { background: var(--ai-tint-strong); }
 /* Something to apply turns the button solid, like a ready-to-send composer. */
 .ai-overview .ai-apply-model:enabled { color: var(--ai-bg); background: var(--ai-link); }
 .ai-overview .ai-apply-model:enabled:hover { color: var(--ai-bg); background: color-mix(in srgb, var(--ai-link) 85%, var(--ai-text)); }
 .ai-overview .ai-restart-help,
-.ai-overview .ai-settings-busy { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8rem; }
-@media (prefers-reduced-motion: no-preference) {
-  .ai-overview .ai-settings-footer > button,
-  .ai-overview .ai-model-settings select,
-  .ai-overview .ai-thinking label { transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out; }
-}
-.ai-overview .ai-status,
-.ai-overview .ai-turn-status { color: var(--ai-muted); font-size: 0.85rem; margin-block: 0.75rem; }
+.ai-overview .ai-settings-busy { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8125rem; }
+
+/* Status: one line that says what the panel is doing, or what went wrong. */
+.ai-overview .ai-status { color: var(--ai-muted); font-size: 0.9375rem; line-height: 1.5; margin-block: 0.5rem 0.75rem; }
 .ai-overview .ai-status:empty { display: none; }
-.ai-overview .ai-answer {
-  white-space: normal; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65;
-  margin-block: 0.25rem 0.5rem;
-}
-.ai-overview .ai-answer:empty { display: none; }
-.ai-overview .ai-answer a[data-source-id] {
-  display: inline-block; vertical-align: baseline; font-size: 0.75em; font-weight: 600;
-  color: var(--ai-link); background: var(--ai-tint); border-radius: 0.25rem;
-  text-decoration: none; text-align: center; min-width: 1.4em;
-  margin-inline: 0.15em; padding-inline: 0.2em; line-height: 1.5;
-}
-.ai-overview .ai-question {
-  /* Each follow-up opens a new turn in the same column as its answer. */
-  font: inherit; font-weight: 600; line-height: 1.5;
-  margin-block: 1.25rem 0.5rem; padding-block-start: 1.25rem;
-  border-block-start: 1px solid var(--ai-border);
-  white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.ai-overview .ai-turns > article:has(.ai-question) .ai-status { margin-block: 0.5rem; }
-.ai-overview .ai-turns > article .ai-actions:has(button:not([hidden])) { margin-block: 0.5rem 0.75rem; }
 /* A light sweep shows pending work without animating the answer text itself. */
 .ai-overview:is([data-phase="starting"], [data-phase="streaming"], [data-phase="selecting"]) .ai-status {
   width: fit-content; color: transparent;
@@ -139,25 +154,87 @@
   animation: ai-status-sweep 1.8s linear infinite;
 }
 @keyframes ai-status-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .ai-overview .ai-status { animation: none !important; color: var(--ai-muted) !important; background: none !important; }
+/* A failure reads as one: marked, in body colour, with its way out right below. */
+.ai-overview .ai-status[data-tone] { color: var(--ai-text); }
+.ai-overview .ai-status[data-tone="error"] { display: flex; align-items: flex-start; gap: 0.5rem; }
+.ai-overview .ai-status[data-tone="error"]::before {
+  content: ""; flex: none; width: 1.125rem; height: 1.125rem; margin-block-start: 0.15rem; background: var(--ai-error);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5v5.5M12 16.5v.01'/%3E%3C/svg%3E") center / contain no-repeat;
 }
-.ai-overview .ai-sources { font-size: 0.85rem; margin-block: 0.75rem 0; }
-.ai-overview .ai-sources summary { cursor: pointer; color: var(--ai-text); line-height: 1.6; padding-block: 0.6rem; }
-.ai-overview .ai-sources summary span { color: var(--ai-muted); margin-inline-start: 0.75rem; overflow-wrap: anywhere; }
-.ai-overview .ai-sources ol { padding-inline-start: 1.75rem; margin-block: 0.25rem 1rem; }
-.ai-overview .ai-sources li::marker { color: var(--ai-link); font-weight: 600; }
-.ai-overview .ai-sources li { margin-block: 1rem; padding-inline-start: 0.25rem; overflow-wrap: anywhere; }
-.ai-overview .ai-sources small { display: block; color: var(--ai-muted); margin-block-start: 0.25rem; }
-.ai-overview .ai-sources li p { line-height: 1.6; margin-block: 0.4rem; }
-.ai-overview .ai-sources li:focus { outline: 2px solid var(--ai-link); outline-offset: 4px; border-radius: 0.1rem; }
 .ai-overview .ai-actions { display: flex; gap: 0.5rem; }
-.ai-overview .ai-actions button { min-height: 44px; }
-.ai-overview .ai-actions:has(button:not([hidden])) { margin-block-start: 0.75rem; }
+.ai-overview .ai-actions button { min-height: 44px; padding-inline: 1rem; font-weight: 600; background: var(--ai-tint); border-color: transparent; }
+.ai-overview .ai-actions button:enabled:hover { background: var(--ai-tint-strong); }
+.ai-overview .ai-actions:has(button:not([hidden])) { margin-block: 0.5rem 0.75rem; }
+
+/* The answer. */
+.ai-overview .ai-turns { display: flow-root; overflow-anchor: none; }
+.ai-overview .ai-answer {
+  white-space: normal; overflow-wrap: anywhere; font-size: 1rem; line-height: var(--ai-line);
+  margin-block: 0.25rem 0.5rem;
+}
+.ai-overview .ai-answer:empty { display: none; }
+.ai-overview .ai-answer a[data-source-id] {
+  display: inline-block; vertical-align: baseline; font-size: 0.75em; font-weight: 600;
+  color: var(--ai-link); background: var(--ai-tint); border-radius: 0.3rem;
+  text-decoration: none; text-align: center; min-width: 1.4em;
+  margin-inline: 0.15em; padding-inline: 0.25em; line-height: 1.5;
+}
+.ai-overview .ai-answer a[data-source-id]:hover { color: var(--ai-bg); background: var(--ai-link); }
+.ai-overview .ai-question {
+  /* Each follow-up opens a new turn in the same column as its answer. */
+  font: inherit; font-weight: 650; line-height: 1.5;
+  margin-block: 1.25rem 0.5rem; padding-block-start: 1.25rem;
+  border-block-start: 1px solid var(--ai-border);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Collapsed, the first answer keeps its shape (headings, lists, code) and fades
+   out after a few lines instead of being flattened into one run of text. */
+.ai-overview[data-expanded="false"] .ai-turns > article:not(:first-child) { display: none; }
+.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) {
+  max-height: calc(var(--ai-preview-lines) * var(--ai-line) * 1em); overflow: hidden;
+}
+.ai-overview[data-expanded="false"][data-clipped="true"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5em), transparent);
+}
+/* Newly streamed text fades in; overview.js wraps only the latest arrivals. */
+.ai-overview .ai-fresh { animation: ai-fresh 320ms ease-out both; }
+@keyframes ai-fresh { from { opacity: 0; } to { opacity: 1; } }
+
+/* Sources: a one-line summary that opens the numbered list the citations point at. */
+.ai-overview .ai-sources { font-size: 0.875rem; margin-block: 0.25rem 0; }
+/* Nothing to cite yet, or nothing was written: the list would only be noise. */
+.ai-overview:not([data-chat="true"]) .ai-turns > article:has(> .ai-answer:empty) > .ai-sources { display: none; }
+.ai-overview .ai-sources summary {
+  display: flex; align-items: center; gap: 0.5rem; width: fit-content; max-width: 100%; box-sizing: border-box;
+  min-height: 2.75rem; list-style: none; cursor: pointer; color: var(--ai-text); font-weight: 600; line-height: 1.4;
+  white-space: nowrap; border-radius: 0.5rem;
+}
+.ai-overview .ai-sources summary::-webkit-details-marker { display: none; }
+.ai-overview .ai-sources summary::before {
+  content: ""; flex: none; width: 0.875rem; height: 0.875rem; background: var(--ai-muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.ai-overview .ai-sources[open] summary::before { rotate: 90deg; }
+.ai-overview .ai-sources summary:hover::before { background: var(--ai-link); }
+.ai-overview .ai-sources summary span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ai-muted); font-weight: 400;
+}
+.ai-overview .ai-provenance { font-size: 0.8125rem; color: var(--ai-muted); margin-block: 0 0.5rem; }
+.ai-overview .ai-sources ol { padding-inline-start: 1.75rem; margin-block: 0.25rem 0.75rem; }
+.ai-overview .ai-sources li::marker { color: var(--ai-link); font-weight: 600; }
+.ai-overview .ai-sources li { margin-block: 0.75rem; padding-inline-start: 0.25rem; overflow-wrap: anywhere; border-radius: 0.3rem; }
+.ai-overview .ai-sources li:first-child { margin-block-start: 0.25rem; }
+.ai-overview .ai-sources li a { font-weight: 600; }
+.ai-overview .ai-sources small { display: block; color: var(--ai-muted); font-size: 0.75rem; margin-block-start: 0.15rem; }
+.ai-overview .ai-sources li p { color: var(--ai-muted); line-height: 1.55; margin-block: 0.3rem 0; }
+.ai-overview .ai-sources li p:empty { display: none; }
+.ai-overview .ai-sources li:focus { outline: 2px solid var(--ai-link); outline-offset: 4px; }
+
 /* The composer is the next search: a follow-up may search again, so it wears the
    host's search box (surface, radius, shadow). */
 .ai-overview .ai-follow-up {
-  display: flex; align-items: flex-end; gap: 0.5rem; margin-block-start: 1rem;
+  display: flex; align-items: flex-end; gap: 0.5rem; margin-block-start: 0.75rem;
   padding: 0.5rem 0.5rem 0.5rem 0.875rem; border: 1px solid transparent; border-radius: 0.8rem;
   background: var(--color-search-background, var(--ai-bg));
   box-shadow: var(--color-search-shadow, 0 2px 8px #22262e40);
@@ -177,32 +254,36 @@
   min-width: 2.25rem; min-height: 2.25rem; padding: 0; border: 0; border-radius: 50%;
   color: var(--ai-muted); background: transparent;
 }
+.ai-overview .ai-follow-up button > svg { grid-area: 1 / 1; }
 .ai-overview .ai-follow-up button:disabled { opacity: 1; color: var(--ai-muted); }
 /* Ready to send, and stopping an answer, are filled; an empty composer stays quiet. */
 .ai-overview .ai-follow-up:not([data-busy="true"]) button:enabled { color: var(--ai-bg); background: var(--ai-link); }
 .ai-overview .ai-follow-up:not([data-busy="true"]) button:enabled:hover { background: color-mix(in srgb, var(--ai-link) 85%, var(--ai-text)); }
 .ai-overview .ai-follow-up[data-busy="true"] button { color: var(--ai-bg); background: var(--ai-text); }
+.ai-overview .ai-follow-up button:enabled:active { scale: 0.92; }
 .ai-overview .ai-follow-up button:focus-visible { outline-offset: 2px; }
 .ai-overview .ai-follow-up .ai-stop-icon { fill: currentColor; stroke: none; width: 0.875rem; height: 0.875rem; }
+/* Send and stop trade places in the same button. */
 .ai-overview .ai-follow-up[data-busy="true"] .ai-send-icon,
-.ai-overview .ai-follow-up:not([data-busy="true"]) .ai-stop-icon { display: none; }
+.ai-overview .ai-follow-up:not([data-busy="true"]) .ai-stop-icon { opacity: 0; scale: 0.5; }
 @media (hover: none) {
   .ai-overview .ai-follow-up button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .ai-overview .ai-follow-up button { transition: background-color 120ms ease-out, color 120ms ease-out; }
+
+/* The disclosure control is plain text under whatever it reveals or folds away. */
+.ai-overview .ai-more-row { display: flex; margin-block: 0.25rem 0; }
+.ai-overview .ai-more {
+  display: inline-flex; align-items: center; gap: 0.375rem; min-height: 44px;
+  margin-inline-start: -0.5rem; padding: 0.35rem 0.5rem; border-color: transparent; font-weight: 600;
 }
-/* Beside the composer, the disclosure control steps back to plain text. */
-.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row { justify-content: flex-start; margin-block-start: 0.25rem; }
-.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row::before,
-.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row::after { display: none; }
-.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row .ai-more {
-  min-width: 0; padding-inline: 0.5rem; border-color: transparent; color: var(--ai-muted); font-weight: 500;
-}
+.ai-overview .ai-more svg { width: 1rem; height: 1rem; }
+.ai-overview .ai-more[aria-expanded="true"] svg { rotate: 180deg; }
+.ai-overview .ai-follow-up:not([hidden]) + .ai-more-row .ai-more { color: var(--ai-muted); font-weight: 500; }
 .ai-overview .ai-collapsed-preview {
   color: var(--ai-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-block: 0.5rem; font-size: 0.9rem;
+  margin-block: 0.25rem 0.5rem; font-size: 0.9375rem;
 }
+
 /* The model field draws its own chevron so it sits inside the field in every browser. */
 .ai-overview .ai-select { position: relative; display: block; }
 .ai-overview .ai-select::after {
@@ -211,8 +292,9 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 .ai-overview .ai-model-settings select {
-  box-sizing: border-box; display: block; max-width: 100%; width: 100%; min-height: 44px;
-  margin: 0; padding: 0.6rem 2.5rem 0.6rem 0.75rem; font: inherit; appearance: none;
+  box-sizing: border-box; display: block; max-width: 100%; width: 100%; min-height: 44px; height: auto;
+  /* The host theme sets select padding with !important. */
+  margin: 0; padding: 0.6rem 2.5rem 0.6rem 0.75rem !important; font: inherit; appearance: none;
   color: var(--ai-text); background: var(--ai-bg); text-overflow: ellipsis;
   border: 1px solid var(--ai-border); border-radius: var(--ai-control-radius);
 }
@@ -220,7 +302,7 @@
 .ai-overview .ai-model-settings select:enabled:hover { border-color: color-mix(in srgb, var(--ai-text) 35%, var(--ai-border)); }
 .ai-overview .ai-model-settings select:disabled { color: var(--ai-muted); cursor: default; }
 .ai-overview .ai-model-help,
-.ai-overview .ai-model-status { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8rem; }
+.ai-overview .ai-model-status { margin: 0.5rem 0 0; color: var(--ai-muted); font-size: 0.8125rem; }
 .ai-overview .ai-model-status:empty { display: none; }
 /* Thinking is one row of equal segments on a quiet track; the chosen one is raised. */
 .ai-overview .ai-thinking-settings { margin: 1rem 0 0; padding: 0; border: 0; min-width: 0; }
@@ -244,64 +326,82 @@
 .ai-overview .ai-thinking label:has(input:focus-visible) { outline: 2px solid var(--ai-link); outline-offset: 1px; }
 .ai-overview .ai-thinking-settings:disabled label { color: var(--ai-muted); cursor: default; }
 .ai-overview .ai-thinking-settings:disabled .ai-thinking { opacity: 0.6; }
-@media (max-width: 450px) {
-  .ai-overview .ai-sources summary span { display: block; margin-inline-start: 1rem; }
-}
-/* Only user-opened controls animate; answer text remains steady while streaming. */
-.ai-overview .ai-options:not([hidden]) {
-  animation: ai-summary-reveal 160ms ease-out;
-}
-@keyframes ai-summary-reveal { from { opacity: 0; translate: 0 -4px; } to { opacity: 1; translate: 0 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .ai-overview .ai-options:not([hidden]) { animation: none; }
-}
-.ai-overview .ai-sparkle { display: inline-block; margin-inline-end: 0.5rem; color: var(--ai-muted); font-size: 1.2em; }
-.ai-overview .ai-turns { display: flow-root; overflow-anchor: none; }
-.ai-overview .ai-more-row { display: flex; align-items: center; gap: 0.85rem; margin-block: 0.75rem 0; }
-.ai-overview .ai-more-row::before,
-.ai-overview .ai-more-row::after { content: ''; height: 1px; background: var(--ai-border); flex: 1; }
-.ai-overview .ai-more {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  min-height: 44px; min-width: 7.5rem; padding: 0.35rem 1rem;
-  border-radius: 2rem; color: var(--ai-text); font-weight: 600;
-}
-.ai-overview .ai-more svg { width: 1rem; height: 1rem; }
-.ai-overview .ai-more[aria-expanded="true"] svg { transform: rotate(180deg); }
-.ai-overview[data-expanded="false"] .ai-turns > article:not(:first-child) { display: none; }
-.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) {
-  /* Paragraph breaks must not consume the final preview line on their own. */
-  white-space: normal;
-  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-}
-@media (max-width: 450px) {
-  .ai-overview .ai-overview-header { gap: 0.25rem; }
-  .ai-overview .ai-header-actions { flex-shrink: 0; }
+@media (hover: none) {
+  .ai-overview .ai-thinking label { min-height: 2.5rem; }
 }
 
 /* Generated Markdown shares the search typography; code gets its own scroll area. */
 .ai-overview .ai-answer p { margin: 0 0 0.75rem; white-space: pre-wrap; }
 .ai-overview .ai-answer > :last-child { margin-block-end: 0; }
-.ai-overview .ai-answer h3 { font: inherit; font-weight: 650; margin: 1rem 0 0.4rem; }
-.ai-overview .ai-answer :is(ul, ol) { margin: 0.5rem 0; padding-inline-start: 1.5rem; }
+.ai-overview .ai-answer h3 { font: inherit; font-size: 1.0625rem; font-weight: 650; line-height: 1.4; margin: 1.25rem 0 0.35rem; }
+.ai-overview .ai-answer > h3:first-child { margin-block-start: 0; }
+.ai-overview .ai-answer :is(ul, ol) { margin: 0.5rem 0 0.75rem; padding-inline-start: 1.5rem; }
 .ai-overview .ai-answer li { margin: 0.25rem 0; }
+.ai-overview .ai-answer li::marker { color: var(--ai-muted); }
 .ai-overview .ai-answer li p { margin: 0; }
-.ai-overview .ai-answer blockquote { margin: 0.75rem 0; padding-inline-start: 1rem; border-inline-start: 3px solid var(--ai-border); }
+.ai-overview .ai-answer blockquote { margin: 0.75rem 0; padding-inline-start: 1rem; border-inline-start: 3px solid var(--ai-border); color: var(--ai-muted); }
 .ai-overview .ai-answer code { font-family: ui-monospace, "Cascadia Code", "Liberation Mono", monospace; font-size: 0.875em; }
-.ai-overview .ai-answer :not(pre) > code { padding: 0.1rem 0.25rem; border-radius: 0.2rem; background: var(--ai-tint); }
-.ai-overview .ai-code-block { margin-block: 0.75rem; border: 1px solid var(--ai-border); border-radius: 0.5rem; overflow: hidden; }
-.ai-overview .ai-code-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-inline: 0.75rem 0.25rem; background: var(--ai-tint); font-size: 0.8rem; color: var(--ai-muted); }
+.ai-overview .ai-answer :not(pre) > code { padding: 0.1rem 0.3rem; border-radius: 0.25rem; background: var(--ai-tint); }
+/* A code block is one tinted surface; its language and Copy sit on the first row. */
+.ai-overview .ai-code-block { margin-block: 0.75rem; border-radius: 0.5rem; overflow: hidden; background: var(--ai-tint); }
+.ai-overview .ai-code-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-inline: 0.85rem 0.25rem; font-size: 0.8125rem; color: var(--ai-muted); }
 .ai-overview .ai-code-toolbar > span { overflow-wrap: anywhere; min-width: 0; }
-.ai-overview .ai-code-toolbar button { min-height: 44px; flex-shrink: 0; border: 0; font-size: inherit; }
-.ai-overview .ai-code-block pre { margin: 0; padding: 0.85rem; max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; tab-size: 4; color: var(--ai-text); background: transparent; line-height: 1.6; }
+.ai-overview .ai-code-toolbar button { min-height: 2.25rem; flex-shrink: 0; border: 0; font-size: inherit; padding-block: 0.25rem; }
+.ai-overview .ai-code-toolbar button:enabled:hover { background: transparent; text-decoration: underline; text-underline-offset: 0.2em; }
+.ai-overview .ai-code-toolbar button[data-copied] { color: var(--ai-text); }
+@media (hover: none) {
+  .ai-overview .ai-code-toolbar button { min-height: 44px; }
+}
+.ai-overview .ai-code-block pre { margin: 0; padding: 0.25rem 0.85rem 0.85rem; max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; tab-size: 4; color: var(--ai-text); background: transparent; line-height: 1.6; }
 .ai-overview .ai-code-block pre:focus-visible { outline: 2px solid var(--ai-link); outline-offset: -3px; }
 .ai-overview .ai-code-block pre code { padding: 0; background: none; white-space: inherit; }
-.ai-overview .ai-code-status { display: block; padding: 0 0.75rem 0.5rem; font-size: 0.8rem; color: var(--ai-muted); }
-.ai-overview .ai-code-status:empty,
-.ai-overview .ai-code-preview { display: none; }
-.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) :is(p, h3, ul, ol, li, blockquote) { display: inline; margin: 0; padding: 0; border: 0; white-space: normal; }
-.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) :is(p, h3, li)::after { content: " "; }
-.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) .ai-code-block { display: none; }
-.ai-overview[data-expanded="false"] .ai-turns > article:first-child .ai-answer:not(.ai-answer-revealed) .ai-code-preview { display: inline; color: var(--ai-muted); }
+/* Copying confirms on the button; only a failure needs a visible line. */
+.ai-overview .ai-code-status { display: block; padding: 0 0.85rem 0.6rem; font-size: 0.8125rem; color: var(--ai-text); }
+.ai-overview .ai-code-status:not([data-tone="error"]) {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+@media (max-width: 450px) {
+  .ai-overview .ai-overview-header { gap: 0.25rem; }
+  .ai-overview .ai-header-actions { flex-shrink: 0; }
+}
+
+/* Motion. Everything here is opacity, transform, or colour, answers something the
+   reader did or marks a change of state, and is switched off under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .ai-overview button,
+  .ai-overview .ai-model-settings select,
+  .ai-overview .ai-thinking label,
+  .ai-overview .ai-answer a[data-source-id],
+  .ai-overview .ai-sources li { transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out, scale 120ms ease-out; }
+  .ai-overview :is(.ai-header-actions button, .ai-settings-close)::before { transition: opacity 120ms ease-out, scale 160ms var(--ai-ease); }
+  .ai-overview button > svg { transition: opacity 140ms ease-out, scale 180ms var(--ai-ease), rotate 220ms var(--ai-ease); }
+  .ai-overview .ai-sources summary::before { transition: rotate 180ms var(--ai-ease), background-color 120ms ease-out; }
+  /* The settings sheet grows from its toggle and leaves the same way. */
+  .ai-overview .ai-options {
+    transition: opacity 140ms ease-out, scale 180ms var(--ai-ease), translate 180ms var(--ai-ease), display 180ms allow-discrete;
+  }
+  .ai-overview .ai-options[hidden] { opacity: 0; scale: 0.97; translate: 0 -4px; pointer-events: none; }
+  @starting-style {
+    .ai-overview .ai-options:not([hidden]) { opacity: 0; scale: 0.97; translate: 0 -4px; }
+  }
+  /* Whatever arrives (an opened list, a new turn, the composer, an error's Retry)
+     settles into place instead of popping. */
+  .ai-overview .ai-content,
+  .ai-overview .ai-collapsed-preview,
+  .ai-overview .ai-follow-up,
+  .ai-overview .ai-actions button,
+  .ai-overview .ai-status[data-tone],
+  .ai-overview .ai-turns > article + article,
+  .ai-overview .ai-sources[open] > :not(summary) { animation: ai-settle 220ms var(--ai-ease) both; }
+  .ai-overview .ai-code-block { animation: ai-fresh 320ms ease-out both; }
+}
+@keyframes ai-settle { from { opacity: 0; translate: 0 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-overview *, .ai-overview *::before, .ai-overview *::after { animation: none !important; transition: none !important; }
+  .ai-overview .ai-status { color: var(--ai-muted) !important; background: none !important; }
+  .ai-overview .ai-status[data-tone] { color: var(--ai-text) !important; }
+}
 
 /* Scoped syntax colors follow SearXNG's explicit theme or its automatic theme. */
 .ai-overview .ai-code-block {
