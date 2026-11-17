@@ -1,33 +1,27 @@
 # AI overviews for SearXNG
 
-Add streaming, source-linked answers above SearXNG search results. End a search
-with `?` to generate a summary from the returned snippets, using a local model
-or a hosted provider.
+End a search with `?` and a cited answer streams in above the SearXNG results,
+written from the returned snippets by a local model or a hosted provider.
 
 ![AI Summary in SearXNG’s dark theme, showing a cited answer to “Why should I use searxng?”, eight sources, and the Show full answer control.](docs/images/ai-summary-dark.png)
 
-- Numbered citations open the source snippets used for the answer.
+- Numbered citations open the source snippets the answer was written from.
+- Ask follow-up questions; each answer keeps its own sources. Stop, retry, or
+  regenerate at any point.
 - Markdown answers include copyable code blocks with syntax highlighting.
-- Ask follow-up questions; each answer keeps its own sources.
-- Optional chat mode turns the results page into a full-width conversation with
-  suggested next questions. End a search with `??` to open straight into it.
-- Stop, retry, regenerate, and optionally switch between configured models and
-  choose how much the model thinks.
-- Fits SearXNG's Simple theme, including dark mode and mobile layouts.
+- Optional: a model picker, a choice of how much the model thinks, and a chat
+  mode that turns the results page into a full-width conversation with suggested
+  next questions (end a search with `??` to open straight into it).
 
 **Early-stage software for personal instances.** Tested with SearXNG
-`2026.9.19-e831fc2a1` and the Simple theme; other versions and themes are
-unverified.
+`2026.9.19-e831fc2a1` and the Simple theme, including dark mode and mobile
+layouts; other versions and themes are unverified. Providers are tested against
+recorded responses, not live against every backend and model.
 
-[Provider configuration](docs/providers.md) ·
-[Development and testing](docs/development.md) ·
-[Architecture](docs/ARCHITECTURE.md)
+## Install
 
-## Install in SearXNG
-
-These steps add the plugin to an existing Docker Compose deployment that uses the
-Simple theme. Clone this repository on the host first; nothing else needs
-installing there.
+These steps add the plugin to an existing Docker Compose deployment. Clone this
+repository on the host first; nothing else needs installing there.
 
 ```sh
 git clone https://github.com/jacobabahn/ai-overview-searxng.git
@@ -61,11 +55,10 @@ To use something else:
   `AI_OVERVIEW_API_KEY`. The key stays on the server.
 - **OpenAI-compatible local server:** set the backend to `local` and the endpoint
   to its full `/v1/chat/completions` URL.
-- **Several models, a model picker, chat mode, thinking control, or tuned
+- **Several models, the model picker, chat mode, thinking control, or tuned
   limits:** mount an `overview.yml` instead of setting these variables.
 
-[Provider configuration](docs/providers.md) covers every variable and the YAML
-format. There is no automatic fallback to another provider.
+[Configuration](docs/providers.md) lists every variable and YAML setting.
 
 ### 2. Enable the plugin
 
@@ -83,10 +76,11 @@ outgoing:
       retries: 0
 ```
 
-`enable_http` lets the plugin reach local HTTP model endpoints; set it to `false`
-if every endpoint uses HTTPS. `server.secret_key` must be a strong random value
-of at least 24 characters. Disable any other AI-answer plugin to avoid duplicate
-panels.
+- `enable_http` lets the plugin reach model endpoints over plain HTTP. Set it to
+  `false` if every endpoint uses HTTPS.
+- `server.secret_key` must be a strong random value of at least 24 characters;
+  the plugin signs conversation state with it and will not load without one.
+- Disable any other AI-answer plugin to avoid duplicate panels.
 
 ### 3. Restart and search
 
@@ -111,64 +105,49 @@ for the SearXNG process, and apply step 2.
 
 ## Try it without SearXNG or a model
 
-To see the interface before installing anything into SearXNG, run the standalone
-demo from the repository root. It requires Python 3.11+,
-[uv](https://docs.astral.sh/uv/), and Make:
+The standalone demo shows the interface with prerecorded answers. From the
+repository root, with Python 3.11+, [uv](https://docs.astral.sh/uv/), and Make:
 
 ```sh
 uv sync --locked
 make demo
 ```
 
-Open <http://127.0.0.1:8765>. The demo uses prerecorded fixture answers; it needs
-no SearXNG instance, API key, or model server.
+Open <http://127.0.0.1:8765>.
 
-## Privacy and limitations
+## Privacy and limits
 
-The selected provider receives your question and the search snippets chosen as
-sources. Hosted providers receive that data even when SearXNG itself is
-self-hosted; local models keep generation on the configured server.
-Search-engine requests still follow your SearXNG settings.
-
-- A summary is generated only for first-page, General-category searches that end
-  in `?`. With chat mode enabled, ending in `??` opens the conversation instead of
-  the results list.
+- Only first-page, General-category searches ending in `?` reach the model. It
+  receives the question and the search snippets chosen as sources. A hosted
+  provider receives them even when SearXNG is self-hosted; a local model keeps
+  them on the configured server. Search-engine requests still follow your
+  SearXNG settings.
 - Answers are written from search snippets, not full pages. A citation shows
   which source the model was given; it does not prove the claim is correct.
-- Completed answers are cached in server memory for 30 minutes per browser, so
-  reloading or repeating a search does not pay for a new generation. Regenerate
-  always asks the model again.
-- In chat mode, each completed answer makes one extra, smaller request to the
-  same provider for suggested next questions. It sends the conversation and that
-  turn's snippets again. Set `follow_up_suggestions: false` to turn it off.
-- The browser's local storage holds only the selected model and thinking level,
-  and a random ID that scopes the cache to that browser.
-- Each worker runs at most 2 generations at once, plus up to 2 suggestion
-  requests in chat mode. There are no per-user rate or spending limits, so a
-  public instance can run up provider costs.
-- Compatibility is tested against recorded provider responses, not live against
-  every backend and model.
+- There are no per-user rate or spending limits, only a per-worker cap on
+  simultaneous generations, so a public instance can run up provider costs.
+- Completed first answers are kept in server memory, by default for 30 minutes
+  per browser, so repeating a search does not pay for a new generation.
 
-[Architecture](docs/ARCHITECTURE.md) describes state handling, budgets, and how
-follow-ups are planned and searched.
+[Configuration](docs/providers.md#settings-reference) has the settings behind
+these limits, and [Architecture](docs/ARCHITECTURE.md) describes signed state,
+the answer cache, and how follow-ups are searched.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| No summary panel | Simple theme, plugin enabled in Preferences, first page of General results, and a trailing `?`. Check SearXNG logs for configuration errors. |
+| No summary panel | Simple theme, plugin enabled in Preferences, first page of General results, and a trailing `?`. Otherwise look in the SearXNG log for a configuration error. |
 | Configuration error | The SearXNG log line `AI overview configuration failed: …` names the problem. Check YAML paths and permissions, a valid `default_profile`, and a strong `server.secret_key`. Restart after edits. |
-| "Needs an API key" | The log warns at startup about each profile whose key variable is unset or empty. Pass the variable into the SearXNG container, or point `api_key_env` at the one you set. |
+| "The selected provider needs an API key." | The log warns at startup about each profile whose key variable is unset or empty. Pass the variable into the SearXNG container, or point `api_key_env` at the one you set. |
 | Local model unreachable | Test the endpoint from inside the container. Enable HTTP on the `ai_overview` network for HTTP endpoints. |
 | Answer arrives all at once | Disable reverse-proxy buffering for `/ai-overview/stream` and set its read timeout longer than the configured generation timeout. |
 | Summary stays busy | The worker has reached its generation limit. Automatic retries are bounded; wait for active requests to finish or use Retry. |
 
 ## Development
 
-See [development and testing](docs/development.md) for local checks, real SearXNG
-integration tests, and packaging. Bug reports should include the SearXNG version,
-backend, model ID, and reproduction steps. Omit credentials and private search
-content.
+[Development and testing](docs/development.md) covers local checks, the SearXNG
+integration tests, packaging, and what to include in a bug report.
 
 ## License
 
