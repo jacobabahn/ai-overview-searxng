@@ -64,6 +64,28 @@ Profiles, sources, search options, conversations, turns, messages, and events us
 typed dataclasses. Stream failures use typed exceptions. Browser modules are
 packaged directly; there is no frontend build step.
 
+## Result snapshot
+
+`post_search` picks the first answer's sources from SearXNG's result container
+while it is still open. `SearchWithPlugins` runs every plugin's `post_search` and
+only then closes the container; closing ignores later `extend` calls and adds each
+engine's score counters, and it is not idempotent. So the plugin never calls
+`get_ordered_results()`, which closes an open container. It reads
+`result_container.main_results_map`, scores each entry with
+`searx.results.calculate_score` without storing the score, sorts best first
+(stable on ties), and returns the panel as an `Answer` from `post_search`.
+
+Sources follow plain score order. The page's order also groups results of the
+same category, template and thumbnail presence (up to eight, within twenty
+places), so a lower-scored result can sit higher on the page than in the
+sources when results of different kinds are mixed. When they are all of one
+kind, as in the fixture searches, the two orders are the same.
+
+Follow-up retrieval runs a plain `Search`, which has no plugins and whose
+container nothing else reads. The plugin closes it once, so its score counters
+are recorded as for any search, and ranks it the same way, so the first answer
+and follow-ups pick evidence by the same rule.
+
 ## State and authorization
 
 The initial search creates a short-lived, signed envelope containing the query,

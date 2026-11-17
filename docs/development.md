@@ -27,7 +27,10 @@ On Linux, Playwright may also need system libraries; install them with
 `uv run playwright install --with-deps chromium` if needed.
 The browser check waits for <http://127.0.0.1:8899/healthz> and covers citations,
 follow-up retrieval, model selection, desktop/mobile layouts, keyboard behavior,
-empty evidence, provider errors, retry, and Stop. Screenshots go to ignored
+empty evidence, provider errors, retry, and Stop. The container check makes
+sure the plugin leaves SearXNG's result container open in `post_search`: a
+fixture plugin forced to run after it still shows its answer, and a one-result
+fixture engine's score on `/stats` is counted once per search. Screenshots go to ignored
 `artifacts/`. Remove the test containers and volumes afterward:
 
 ```sh

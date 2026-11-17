@@ -11,6 +11,8 @@ services:
       - ./tests/integration/settings.yml:/etc/searxng/settings.yml:ro
       - ./tests/integration/overview.yml:/etc/searxng/overview.yml:ro
       - ./tests/integration/overview_fixture.py:/usr/local/searxng/searx/engines/overview_fixture.py:ro
+      - ./tests/integration/score_fixture.py:/usr/local/searxng/searx/engines/score_fixture.py:ro
+      - ./tests/integration/order_fixture.py:/usr/local/searxng/order_fixture.py:ro
     depends_on:
       - provider
   provider:
