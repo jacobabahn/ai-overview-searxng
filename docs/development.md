@@ -100,16 +100,20 @@ table of each grammar's name and aliases (`js`, `py`, `c++`, `yml`, `toml`, ...)
 
 Nothing is fetched until a code block needs it. The first labelled block imports
 the core and its grammar from the instance's own `static/` path, along with any
-grammar it embeds (CSS and JavaScript for HTML, Bash for Dockerfiles and shell
-sessions, XML for Markdown); each module is fetched once per page. The fetch
+grammar it embeds, directly or through another grammar: CSS and JavaScript for
+HTML; CSS, HTML and GraphQL for tagged templates in JavaScript and TypeScript;
+Bash for Dockerfiles and shell sessions; HTML for Markdown. Each module is
+fetched once per page, and a block is painted only when its grammar and the ones
+it embeds have settled. Left out on purpose: Ruby in YAML, Markdown in Dart doc
+comments, Mojolicious in Perl, and detection of an HTTP message's body. The fetch
 starts while the block is still streaming, and a block that is complete before
 its grammar arrives is painted when it does. A page without code loads only
 `syntax.js`.
 
 To add a language, copy its module from the same release, add it to the table in
 `syntax.js` with the aliases the grammar declares, and list any grammar it embeds.
-`tests/browser/syntax.test.js` fails when a packaged grammar and the table
-disagree.
+The tests in `tests/browser/` fail when a packaged grammar's aliases or
+sub-languages and those tables disagree.
 
 Code stays plain while a fence is open; a closing fence or completed answer
 triggers highlighting. Unknown or unlabeled languages, grammars that fail to load,

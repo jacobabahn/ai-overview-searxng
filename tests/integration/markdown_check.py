@@ -248,6 +248,20 @@ def main() -> None:
             assert nested.evaluate("el => getComputedStyle(el).opacity") == "1", piece
         expect(panel.locator(".ai-answer li")).to_have_count(2)
         send(page, "done", {"token": "finished", "can_follow_up": True})
+        # On a fresh page, the first JavaScript block also gets the grammars it embeds:
+        # tagged css and html templates are highlighted, not left as plain strings.
+        page.evaluate("window.markdownStream = undefined")
+        requests.clear()
+        page.goto("http://127.0.0.1:8899/search?q=template+example%3F")
+        page.wait_for_function("window.markdownStream !== undefined")
+        templates = 'const style = css`a { color: red; }`;\nconst view = html`<p class="x">hi</p>`;'
+        send(page, "text_delta", {"text": "```js\n" + templates + "\n```\n"})
+        send(page, "done", {"token": "finished", "can_follow_up": True})
+        tagged = panel.locator(".ai-answer .ai-code-block")
+        expect(tagged.locator(".language-css .hljs-attribute")).to_have_text("color")
+        expect(tagged.locator(".language-xml .hljs-name").first).to_have_text("p")
+        expect(tagged.locator("pre code")).to_have_text(templates)
+        assert grammars() == ["core", "css", "graphql", "javascript", "xml"], grammars()
         # A grammar that arrives late paints the block that is already on screen: the
         # whole Rust block is delivered at once while its grammar is held back.
         page.evaluate("window.markdownStream = undefined")
