@@ -22,6 +22,9 @@ def main() -> None:
         page.context.grant_permissions(["clipboard-read", "clipboard-write"])
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+        requests: list[str] = []
+        page.on("request", lambda request: requests.append(request.url))
         # A controllable stream lets us inspect the UI between real text deltas.
         page.add_init_script("""(() => {
           const originalFetch = window.fetch;
@@ -32,8 +35,16 @@ def main() -> None:
             }), {headers: {'Content-Type': 'text/event-stream'}}));
           };
         })();""")
+
+        def grammars() -> list[str]:
+            return sorted(
+                url.rsplit("/highlight-", 1)[1][:-3] for url in requests if "/highlight-" in url
+            )
+
         page.goto("http://127.0.0.1:8899/search?q=python+example%3F")
         page.wait_for_function("window.markdownStream !== undefined")
+        # A page without code fetches no highlighter at all.
+        assert not grammars(), grammars()
         send(
             page,
             "sources",
@@ -131,6 +142,8 @@ def main() -> None:
                 path=str(output / f"markdown-{width}-{'dark' if dark else 'light'}.png"),
                 full_page=True,
             )
+        # Grammars load on demand: the first answer needed Python and nothing else.
+        assert grammars() == ["core", "python"], grammars()
         # HTML, images, and unsafe links stay inert; even HTML-language fences are text.
         assert page.evaluate(r"""async () => {
           const {renderMarkdown} = await import('/ai-overview/static/markdown.js');
@@ -143,41 +156,69 @@ def main() -> None:
           return !box.querySelector('img, script, a, iframe') &&
             box.querySelector('pre code').textContent === '<img src=x onerror=alert(1)> [1]';
         }""")
+
         # Supported languages and aliases produce spans without changing the code.
-        assert page.evaluate(r"""async () => {
+        assert (
+            page.evaluate(r"""async () => {
           const {renderMarkdown} = await import('/ai-overview/static/markdown.js');
           const {renderCitations} = await import('/ai-overview/static/overview.js');
           const box = document.createElement('div');
+          const painted = async selector => {
+            for (let tries = 0; tries < 100 && !box.querySelector(selector); tries++) {
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            return box.querySelector(selector);
+          };
           const examples = {
             python: 'def greet(name):\n    return "Hi " + name',
             py: 'print(True)',
             javascript: 'const value = "text";', js: 'let n = 42;',
             typescript: 'const n: number = 42;', ts: 'interface User { name: string }',
             html: '<div onclick="alert(1)">Hello & goodbye</div>',
-            css: '.example { color: red; }', json: '{"value": true}',
-            bash: 'echo "$HOME"', sh: 'echo "$HOME"', sql: 'SELECT name FROM users;',
+            css: '.example { color: red; }', json: '{"value": true}', jsonc: '{"value": true}',
+            bash: 'echo "$HOME"', sh: 'echo "$HOME"', shell: 'echo "$HOME"', zsh: 'echo "$HOME"',
+            sql: 'SELECT name FROM users;',
+            go: 'func main() { fmt.Println("<b>hi</b>") }', rust: 'fn main() { println!("hi"); }',
+            java: 'public class Example {}', c: 'int main(void) { return 0; }',
+            'c++': 'std::vector<int> items;', 'c#': 'public class Example {}',
+            php: '<?php echo "<script>alert(1)</script>";', ruby: 'def greet; "hi"; end',
+            kotlin: 'fun main() {}', swift: 'let value = 1', yaml: 'name: value', yml: 'name: value',
+            toml: 'name = "value"', dockerfile: 'FROM alpine\nRUN echo hi', diff: '-old\n+new',
+            markdown: '# Title\n\n<img src=x onerror=alert(1)>', lua: 'local value = 1',
+            console: '$ echo hi',
           };
           for (const [language, text] of Object.entries(examples)) {
             renderMarkdown(box, '```' + language + '\n' + text + '\n```', [], renderCitations);
             const code = box.querySelector('pre code');
-            if (!code.querySelector('span') || code.textContent !== text ||
-                code.querySelector('div, script, img, a, [onclick]')) return false;
+            if (!await painted('pre code span') || code.textContent !== text ||
+                code.querySelector('div, script, img, a, [onclick]')) return language;
           }
-          for (const language of ['unknown-language', 'text', '']) {
+          // An inline script and style in HTML use the grammars they embed.
+          renderMarkdown(box, '```html\n<script>let n = 42;</script>\n```', [], renderCitations);
+          if (!await painted('pre code .hljs-keyword')) return 'embedded';
+          for (const language of ['unknown-language', 'text', '', 'constructor', '../overview']) {
             renderMarkdown(box, '```' + language + '\nplain [1] <tag>\n```', [], renderCitations);
+            await new Promise(resolve => setTimeout(resolve, 60));
             const code = box.querySelector('pre code');
-            if (code.children.length || code.textContent !== 'plain [1] <tag>') return false;
+            if (code.children.length || code.textContent !== 'plain [1] <tag>') return language;
           }
           // An unclosed fence is plain during streaming, highlighted at completion.
           const unfinished = '```python\nprint("done")';
           renderMarkdown(box, unfinished, [], renderCitations, {complete: false});
-          if (box.querySelector('pre code span')) return false;
+          if (box.querySelector('pre code span')) return 'unfinished';
           renderMarkdown(box, unfinished, [], renderCitations);
-          if (!box.querySelector('pre code .hljs-string')) return false;
+          if (!box.querySelector('pre code .hljs-string')) return 'finished';
           const large = '# a long comment\n'.repeat(4000);
           renderMarkdown(box, '```python\n' + large + '```', [], renderCitations);
-          return !box.querySelector('pre code span');
+          await new Promise(resolve => setTimeout(resolve, 60));
+          return box.querySelector('pre code span') ? 'large' : true;
         }""")
+            is True
+        )
+        # Every grammar came from this instance, and unknown labels fetched nothing.
+        assert all(url.startswith("http://127.0.0.1:8899/") for url in requests), requests
+        assert not [url for url in requests if "unknown" in url or "constructor" in url]
+        assert "go" in grammars() and "shell" in grammars()
         # Explicit SearXNG themes override the system preference.
         string_token = block.locator(".hljs-string")
         page.emulate_media(color_scheme="dark")
@@ -207,9 +248,42 @@ def main() -> None:
             assert nested.evaluate("el => getComputedStyle(el).opacity") == "1", piece
         expect(panel.locator(".ai-answer li")).to_have_count(2)
         send(page, "done", {"token": "finished", "can_follow_up": True})
+        # A grammar that arrives late paints the block that is already on screen: the
+        # whole Rust block is delivered at once while its grammar is held back.
+        page.evaluate("window.markdownStream = undefined")
+        page.goto("http://127.0.0.1:8899/search?q=rust+example%3F")
+        page.wait_for_function("window.markdownStream !== undefined")
+        held = []
+        page.route("**/highlight-rust.js", lambda route: held.append(route))
+        rust = 'fn main() {\n    println!("hi");\n}'
+        send(page, "text_delta", {"text": "```rust\n" + rust + "\n```\n\nDone."})
+        late = panel.locator(".ai-answer .ai-code-block")
+        expect(late.locator("pre code")).to_have_text(rust)
+        expect(late.locator(".ai-code-toolbar span")).to_have_text("rust")
+        page.wait_for_timeout(200)
+        assert len(held) == 1
+        expect(late.locator("pre code span")).to_have_count(0)
+        late.locator("pre").evaluate("el => { window.lateBlock = el.parentElement; }")
+        held[0].continue_()
+        expect(late.locator(".hljs-keyword").first).to_have_text("fn")
+        expect(late.locator("pre code")).to_have_text(rust)
+        assert late.locator("pre").evaluate("el => el.parentElement === window.lateBlock")
+        # A grammar that cannot be fetched leaves the code plain, and the answer intact.
+        page.unroute("**/highlight-rust.js")
+        page.route("**/highlight-swift.js", lambda route: route.abort())
+        send(page, "text_delta", {"text": "\n\n```swift\nlet value = 1\n```\n"})
+        send(page, "done", {"token": "finished", "can_follow_up": True})
+        swift = late.nth(1)
+        expect(swift.locator("pre code")).to_have_text("let value = 1")
+        page.wait_for_timeout(200)
+        expect(swift.locator("pre code span")).to_have_count(0)
+        errors[:] = [e for e in errors if "Failed to load resource" not in e]
         assert not errors, errors
         browser.close()
-    print("Markdown checks passed: streaming, copy, citations, mobile, dark mode, inert HTML.")
+    print(
+        "Markdown checks passed: streaming, copy, citations, mobile, dark mode, inert HTML, "
+        "on-demand grammars."
+    )
 
 
 if __name__ == "__main__":
