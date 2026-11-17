@@ -394,7 +394,6 @@
   .ai-overview .ai-status[data-tone],
   .ai-overview .ai-turns > article + article,
   .ai-overview .ai-sources[open] > :not(summary) { animation: ai-settle 220ms var(--ai-ease) both; }
-  .ai-overview .ai-code-block { animation: ai-fresh 320ms ease-out both; }
 }
 @keyframes ai-settle { from { opacity: 0; translate: 0 6px; } }
 @media (prefers-reduced-motion: reduce) {

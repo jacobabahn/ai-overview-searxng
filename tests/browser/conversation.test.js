@@ -85,6 +85,7 @@ test("Stop rejects a late done and retries with the last successful token", asyn
   await work;
   assert.equal(cancelled, true);
   assert.match(events.findLast(e => e.event.name === "turn_error").event.data.message, /Stopped/);
+  assert.equal(events.findLast(e => e.event.name === "turn_error").event.data.stopped, true);
   work = c.retry();
   assert.deepEqual(calls[2].body, {token: "first-continuation", question: "Why?"});
   calls[2].resolve(done("retry-continuation")); await work;
@@ -188,6 +189,7 @@ test("busy retries back off three times then stop, with manual retry starting a 
   assert.equal(c.state.busy, false);
   assert.equal(c.state.canRetry, true);
   assert.match(events.findLast(e => e.event.name === "turn_error").event.data.message, /still busy/);
+  assert.equal(events.findLast(e => e.event.name === "turn_error").event.data.stopped, false);
   t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 4);
   work = c.retry(); calls[4].resolve(busy()); await tick();
   assert.equal(events.findLast(e => e.event.name === "waiting").event.data.attempt, 1);

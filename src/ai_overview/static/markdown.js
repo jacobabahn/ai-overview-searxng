@@ -30,6 +30,11 @@ function codeBlock() {
   pre.append(code);
   toolbar.append(language, copy);
   block.append(toolbar, pre, status);
+  // Fades in once, from script: a block inside a list item or quote is moved to a
+  // new parent on every streamed delta, which would restart a CSS animation.
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    block.animate?.([{opacity: 0}, {opacity: 1}], {duration: 320, easing: "ease-out"});
+  }
   // The button keeps its name for assistive technology, which hears the status;
   // sighted readers see the label confirm in place.
   copy.setAttribute("aria-label", "Copy code");

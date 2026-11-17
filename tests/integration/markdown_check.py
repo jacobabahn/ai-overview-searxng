@@ -186,6 +186,27 @@ def main() -> None:
         page.emulate_media(color_scheme="light")
         page.evaluate("document.documentElement.className = 'theme-dark'")
         expect(string_token).to_have_css("color", "rgb(139, 213, 160)")
+        # A code block inside a list item is moved to a new parent on every delta; it
+        # must fade in once and then stay visible while later text streams.
+        page.evaluate("document.documentElement.className = ''")
+        page.evaluate("window.markdownStream = undefined")
+        page.goto("http://127.0.0.1:8899/search?q=nested+code%3F")
+        page.wait_for_function("window.markdownStream !== undefined")
+        send(
+            page,
+            "text_delta",
+            {"text": "1. Create the environment:\n\n   ```bash\n   python -m venv"},
+        )
+        nested = panel.locator(".ai-answer li .ai-code-block")
+        expect(nested).to_have_count(1)
+        assert float(nested.evaluate("el => getComputedStyle(el).opacity")) < 1
+        expect(nested).to_have_css("opacity", "1")
+        for piece in [" .venv\n", "   ```\n\n", "2. Then ", "activate ", "it."]:
+            send(page, "text_delta", {"text": piece})
+            page.wait_for_timeout(40)
+            assert nested.evaluate("el => getComputedStyle(el).opacity") == "1", piece
+        expect(panel.locator(".ai-answer li")).to_have_count(2)
+        send(page, "done", {"token": "finished", "can_follow_up": True})
         assert not errors, errors
         browser.close()
     print("Markdown checks passed: streaming, copy, citations, mobile, dark mode, inert HTML.")
