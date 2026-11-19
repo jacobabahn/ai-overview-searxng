@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .limits import RateLimit
 from .providers.protocols import PROTOCOLS
 from .routing import DEFAULTS, SUFFIXES, go_endpoint
 
@@ -59,6 +60,7 @@ class Config:
     follow_up_suggestions: bool = True
     answer_cache_entries: int = 256
     answer_cache_ttl_seconds: int = 1800
+    rate_limit: RateLimit = field(default_factory=RateLimit)
 
     @classmethod
     def load(cls, path: Optional[str | Path] = None) -> Self:
@@ -114,6 +116,10 @@ class Config:
                 raise ValueError("AI_OVERVIEW_OPTIONS must be a JSON object") from None
         data: dict[str, Any] = {"default_profile": "default", "profiles": {"default": profile}}
         _env_ints(data, ("answer_cache_entries", "answer_cache_ttl_seconds"))
+        limits: dict[str, Any] = {}
+        _env_ints(limits, tuple(RateLimit.__dataclass_fields__), prefix="AI_OVERVIEW_RATE_LIMIT_")
+        if limits:
+            data["rate_limit"] = limits
         return cls.from_dict(data)
 
     @classmethod
@@ -219,6 +225,7 @@ class Config:
         if not isinstance(default, str) or default not in profiles:
             raise ValueError("default_profile must name a configured profile")
         other = {k: v for k, v in data.items() if k not in {"default_profile", "profiles"}}
+        rate_limit = _rate_limit(other.pop("rate_limit", None))
         for k, v in other.items():
             if k in {"model_picker", "chat_mode", "follow_up_suggestions"}:
                 if type(v) is not bool:
@@ -230,7 +237,7 @@ class Config:
             raise ValueError("At most 30 sources and 12 turns are supported")
         if other.get("evidence_bytes", 12000) > 24000:
             raise ValueError("Evidence budget cannot exceed 24000 bytes")
-        return cls(default, profiles, **other)
+        return cls(default, profiles, rate_limit=rate_limit, **other)
 
 
 def _positive(value: Any, name: str, minimum: int = 1) -> None:
@@ -239,10 +246,25 @@ def _positive(value: Any, name: str, minimum: int = 1) -> None:
         raise ValueError(f"{name} must be a {kind} integer")
 
 
-def _env_ints(target: dict[str, Any], fields: tuple[str, ...]) -> None:
-    """Copy AI_OVERVIEW_<FIELD> integers into target; from_dict checks their range."""
+def _rate_limit(raw: Any) -> RateLimit:
+    """Request limits; an empty mapping, like a missing one, leaves them off."""
+    if raw is None:
+        return RateLimit()
+    if not isinstance(raw, dict):
+        raise ValueError("rate_limit must be a mapping")
+    if set(raw) - set(RateLimit.__dataclass_fields__):
+        raise ValueError("Unknown rate_limit field")
+    for k, v in raw.items():
+        _positive(v, f"rate_limit.{k}")
+    return RateLimit(**raw)
+
+
+def _env_ints(
+    target: dict[str, Any], fields: tuple[str, ...], prefix: str = "AI_OVERVIEW_"
+) -> None:
+    """Copy <prefix><FIELD> integers into target; from_dict checks their range."""
     for field_name in fields:
-        name = "AI_OVERVIEW_" + field_name.upper()
+        name = prefix + field_name.upper()
         if name in os.environ:
             try:
                 target[field_name] = int(os.environ[name])

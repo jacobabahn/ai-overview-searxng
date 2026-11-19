@@ -13,6 +13,7 @@ from werkzeug.wsgi import ClosingIterator
 from ai_overview.config import Config, Profile
 from ai_overview.errors import OverviewError
 from ai_overview.evidence import build_sources
+from ai_overview.limits import Limiter, RateLimit
 from ai_overview.models import Event, SearchOptions, Source
 from ai_overview.service import SUGGEST_PROMPT, GenerationService
 from ai_overview.state import StateSigner, initial_state
@@ -753,3 +754,142 @@ def test_suggest_endpoint_validates_state_and_can_be_disabled() -> None:
             assert response.status_code == 400
     with pytest.raises(ValueError, match="follow_up_suggestions must be a boolean"):
         make_service([], follow_up_suggestions="yes")
+
+
+def limited_service(
+    answers: list[str], **limits: int
+) -> tuple[GenerationService, ScriptedTransport, Flask]:
+    service, _, transport = make_service(answers)
+    service.limiter = Limiter(RateLimit(**limits), "s" * 32)
+    app = Flask(__name__)
+    register(app, service)
+
+    # A results page with the panel, as SearXNG renders it.
+    @app.get("/search")
+    def search() -> str:
+        return str(render_panel(service, cache_state()))
+
+    return service, transport, app
+
+
+def overview(browser: Any, service: GenerationService, **body: Any) -> list[Any]:
+    token = service.signer.dumps(cache_state())
+    response = browser.post("/ai-overview/stream", json={"token": token, **body})
+    assert response.status_code == 200
+    return [line for line in response.data.decode().split("\n\n") if line.startswith("event:")]
+
+
+def limited(events: list[Any]) -> bool:
+    return any(e.startswith("event: error") and '"rate_limited"' in e for e in events)
+
+
+def test_no_limits_change_nothing() -> None:
+    service, _, transport = make_service(["One", "Two", "Three"])
+    assert service.limiter is None
+    app = Flask(__name__)
+    register(app, service)
+
+    @app.get("/search")
+    def search() -> str:
+        return str(render_panel(service, cache_state()))
+
+    client = app.test_client()
+    assert "Set-Cookie" not in client.get("/search").headers
+    for _ in range(3):
+        response = client.post(
+            "/ai-overview/stream", json={"token": service.signer.dumps(cache_state())}
+        )
+        assert b"event: done" in response.data
+        assert "Set-Cookie" not in response.headers
+
+
+def test_a_reader_gets_a_notice_after_its_limit_and_cache_hits_are_free() -> None:
+    service, transport, app = limited_service(["Cached", "Second", "Third"], per_reader=2)
+    browser = app.test_client()
+    page = browser.get("/search")
+    cookie = page.headers["Set-Cookie"]
+    assert "ai_overview_reader=" in cookie
+    assert all(a in cookie for a in ("HttpOnly", "SameSite=Lax", "Path=/;"))
+    # The first answer counts; replaying it from the cache does not.
+    assert "event: done" in overview(browser, service, client="tab")[-1]
+    for _ in range(3):
+        assert "event: done" in overview(browser, service, client="tab")[-1]
+    assert "event: done" in overview(browser, service, fresh=True, client="tab")[-1]
+    events = overview(browser, service)
+    assert limited(events)
+    assert "Try again in about an hour." in events[-1]
+    assert len(transport.calls) == 2
+    # The browser kept its identity, so a reload does not reset the count.
+    assert "Set-Cookie" not in browser.get("/search").headers
+    assert limited(overview(browser, service))
+    # Another browser behind the same address has its own allowance.
+    other = app.test_client()
+    other.get("/search")
+    assert "event: done" in overview(other, service)[-1]
+
+
+def test_the_browser_id_cannot_be_chosen_by_the_browser() -> None:
+    service, transport, app = limited_service(["One", "Two", "Three"], per_reader=1)
+    # Without a signed cookie every request counts against the address.
+    for value in (None, "chosen-by-the-browser", "chosen-by-the-browser-2"):
+        client = app.test_client()
+        if value:
+            client.set_cookie("ai_overview_reader", value)
+        events = overview(client, service, client=f"tab-{value}")
+        assert limited(events) == (value is not None)
+    assert len(transport.calls) == 1
+
+
+def test_a_browser_without_the_cookie_is_given_one_with_its_first_answer() -> None:
+    service, _, app = limited_service(["One", "Two", "Three"], per_reader=1)
+    client = app.test_client()
+    token = service.signer.dumps(cache_state())
+    first = client.post("/ai-overview/stream", json={"token": token})
+    assert b"event: done" in first.data
+    assert "ai_overview_reader=" in first.headers["Set-Cookie"]
+    # That answer counted against the address; the next counts against the browser.
+    assert "event: done" in overview(client, service)[-1]
+    assert limited(overview(client, service))
+    assert limited(overview(app.test_client(), service))
+
+
+def test_the_instance_cap_stops_every_reader() -> None:
+    service, transport, app = limited_service(["One", "Two"], per_reader=5, instance_per_day=2)
+    readers = [app.test_client() for _ in range(3)]
+    for reader in readers:
+        reader.get("/search")
+    assert "event: done" in overview(readers[0], service)[-1]
+    assert "event: done" in overview(readers[1], service)[-1]
+    events = overview(readers[2], service)
+    assert limited(events)
+    assert "AI Summary has reached today’s limit on this instance." in events[-1]
+    assert limited(overview(readers[0], service))
+    assert len(transport.calls) == 2
+
+
+def test_a_follow_up_counts_once_and_suggestions_ride_on_it() -> None:
+    service, transport, _ = limited_service(
+        ["First [1]", '{"query": null}', "Follow-up [1]", '{"questions": ["Next?"]}'],
+        per_reader=2,
+    )
+    done = list(service.run(cache_state(), None, reader="r"))[-1]
+    continuation = service.signer.loads(done.data["token"])
+    done = list(service.run(continuation, "Why?", reader="r"))[-1]
+    assert done.name == "done"
+    assert service.suggest(service.signer.loads(done.data["token"])) == ("Next?",)
+    with pytest.raises(OverviewError) as caught:
+        # Refused before planning, so the reader sees nothing begin.
+        next(iter(service.run(service.signer.loads(done.data["token"]), "And?", reader="r")))
+    assert caught.value.code == "rate_limited"
+    assert len(transport.calls) == 4
+
+
+def test_a_search_without_evidence_does_not_count() -> None:
+    service, transport, _ = limited_service(["Answer"], per_reader=1)
+    empty = initial_state("q?", (), "test")
+    for _ in range(2):
+        assert list(service.run(empty, None, reader="r"))[-1].data["code"] == (
+            "insufficient_evidence"
+        )
+    assert list(service.run(cache_state(), None, reader="r"))[-1].name == "done"
+    assert len(transport.calls) == 1

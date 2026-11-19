@@ -12,6 +12,7 @@ from searx.results import calculate_score  # ty: ignore[unresolved-import]
 from .catalog import ModelCatalog
 from .config import Config
 from .evidence import build_sources, eligible
+from .limits import Limiter, ValkeyCounter
 from .models import Engine, SearchOptions, Source
 from .providers.transport import SearXNGTransport
 from .service import GenerationService
@@ -37,7 +38,16 @@ class SXNGPlugin(Plugin):
             secret = os.getenv("AI_OVERVIEW_SECRET") or settings["server"]["secret_key"]
             signer = StateSigner(secret, config.token_ttl_seconds)
             transport = SearXNGTransport()
-            self.service = GenerationService(config, signer, transport, self.retrieve)
+            limiter = None
+            if config.rate_limit.enabled:
+                valkey = valkey_client()
+                counter = ValkeyCounter(valkey) if valkey else None
+                limiter = Limiter(config.rate_limit, secret, counter)
+                self.log.info(
+                    "AI overview: request limits are counted %s",
+                    "in Valkey" if valkey else "in each worker's memory",
+                )
+            self.service = GenerationService(config, signer, transport, self.retrieve, limiter)
             register(app, self.service, ModelCatalog(config, transport.get_json))
         except (OSError, ValueError) as error:
             # Config and signer messages name files, profiles and fields, never secrets.
@@ -98,6 +108,15 @@ class SXNGPlugin(Plugin):
             self.service.config.max_sources,
             self.service.config.evidence_bytes,
         )
+
+
+def valkey_client() -> Any:
+    """SearXNG's Valkey client when settings.yml configures one, else None."""
+    try:
+        from searx import valkeydb  # ty: ignore[unresolved-import]
+    except ImportError:
+        return None
+    return valkeydb.client()
 
 
 def ranked_results(container: Any) -> list[Any]:

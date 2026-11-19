@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from ai_overview.config import Config
+from ai_overview.limits import RateLimit
 
 
 @pytest.fixture(autouse=True)
@@ -179,6 +180,39 @@ def test_answer_cache_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS", "600")
     config = Config.load()
     assert (config.answer_cache_entries, config.answer_cache_ttl_seconds) == (0, 600)
+
+
+def test_rate_limit_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    base = {"default_profile": "p", "profiles": {"p": {"backend": "local", "model": "m"}}}
+    assert Config.from_dict(base).rate_limit == RateLimit()
+    assert not Config.from_dict({**base, "rate_limit": None}).rate_limit.enabled
+    assert not Config.from_dict({**base, "rate_limit": {}}).rate_limit.enabled
+    config = Config.from_dict({**base, "rate_limit": {"instance_per_day": 500}})
+    assert config.rate_limit == RateLimit(None, 3600, 500)
+    full = {"per_reader": 20, "window_seconds": 600, "instance_per_day": 500}
+    assert Config.from_dict({**base, "rate_limit": full}).rate_limit == RateLimit(20, 600, 500)
+    for invalid, message in (
+        ([20], "rate_limit must be a mapping"),
+        ({"per_user": 20}, "Unknown rate_limit field"),
+        ({"per_reader": 0}, "rate_limit.per_reader must be a positive integer"),
+        ({"window_seconds": "1h"}, "rate_limit.window_seconds must be a positive integer"),
+        ({"instance_per_day": True}, "rate_limit.instance_per_day must be a positive integer"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            Config.from_dict({**base, "rate_limit": invalid})
+    monkeypatch.setenv("AI_OVERVIEW_BACKEND", "ollama")
+    monkeypatch.setenv("AI_OVERVIEW_MODEL", "test-model")
+    assert not Config.load().rate_limit.enabled
+    monkeypatch.setenv("AI_OVERVIEW_RATE_LIMIT_PER_READER", "20")
+    monkeypatch.setenv("AI_OVERVIEW_RATE_LIMIT_WINDOW_SECONDS", "600")
+    monkeypatch.setenv("AI_OVERVIEW_RATE_LIMIT_INSTANCE_PER_DAY", "500")
+    assert Config.load().rate_limit == RateLimit(20, 600, 500)
+    monkeypatch.setenv("AI_OVERVIEW_RATE_LIMIT_PER_READER", "twenty")
+    with pytest.raises(ValueError, match="AI_OVERVIEW_RATE_LIMIT_PER_READER must be an integer"):
+        Config.load()
+    monkeypatch.setenv("AI_OVERVIEW_RATE_LIMIT_PER_READER", "-1")
+    with pytest.raises(ValueError, match="rate_limit.per_reader must be a positive integer"):
+        Config.load()
 
 
 def profile_config(**profile: object) -> dict[str, object]:

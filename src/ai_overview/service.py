@@ -11,6 +11,7 @@ from .cache import AnswerCache
 from .config import Config, Profile
 from .errors import OverviewError
 from .evidence import encoded_size
+from .limits import Limiter
 from .models import Conversation, Event, Message, Plan, SearchOptions, Source, Turn
 from .providers.adapter import Provider
 from .providers.transport import Transport, remaining
@@ -68,11 +69,14 @@ class GenerationService:
         signer: StateSigner,
         transport: Transport,
         retrieve: Retriever,
+        limiter: Optional[Limiter] = None,
     ) -> None:
         self.config = config
         self.signer = signer
         self.transport = transport
         self.retrieve = retrieve
+        # Set only when request limits are configured.
+        self.limiter = limiter
         self.cache = (
             AnswerCache(config.answer_cache_entries, config.answer_cache_ttl_seconds)
             if config.answer_cache_entries
@@ -111,12 +115,16 @@ class GenerationService:
         question: Optional[str],
         client: Optional[str] = None,
         suggest: bool = False,
+        reader: str = "",
     ) -> Iterator[Event]:
         """Generate a turn; a completed first answer is cached for `client`.
 
         With `suggest` and a profile that allows it, next questions are asked for
         alongside the answer and sent as a `suggestions` event once ready, if that is
         before the answer is done.
+
+        With request limits, the turn counts against `reader` just before it first
+        calls the provider; planning and suggestions ride on it.
         """
         if len(state.turns) >= self.config.max_turns:
             raise OverviewError("turn_limit", "This conversation is full. Start a new search.")
@@ -134,6 +142,7 @@ class GenerationService:
         current = question or state.query
         sources = state.sources
         if question:
+            self._admit(reader)
             yield Event("status", {"message": "Preparing follow-up…"})
             plan = self._plan(Provider(quick, self.transport), state, question, deadline)
             remaining(deadline)
@@ -153,6 +162,8 @@ class GenerationService:
             return
         messages = self._messages(state, current, sources)
         _input_budget(messages, profile)
+        if not question:
+            self._admit(reader)
         ahead: Optional[Future[tuple[str, ...]]] = None
         if (
             suggest
@@ -274,6 +285,10 @@ class GenerationService:
         finally:
             stream.close()
         return _suggestions(text, asked)
+
+    def _admit(self, reader: str) -> None:
+        if self.limiter:
+            self.limiter.admit(reader)
 
     def _pinned(
         self, state: Conversation, background: bool = False
