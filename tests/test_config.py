@@ -100,7 +100,11 @@ def test_yaml_anthropic_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 @pytest.mark.parametrize(
     "patch",
-    [{"protocol": "chat"}, {"options": {"reasoning": {"effort": "low"}}}, {"discover_models": True}],
+    [
+        {"protocol": "chat"},
+        {"options": {"reasoning": {"effort": "low"}}},
+        {"discover_models": True},
+    ],
 )
 def test_anthropic_backend_rejects_other_protocols_and_options(patch: dict[str, object]) -> None:
     with pytest.raises(ValueError):
