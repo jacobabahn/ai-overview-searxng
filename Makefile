@@ -15,6 +15,7 @@ integration:
 	uv run python tests/integration/browser_check.py
 	uv run python tests/integration/markdown_check.py
 	uv run python tests/integration/busy_check.py
+	uv run python tests/integration/limit_check.py
 	uv run python tests/integration/container_check.py
 
 integration-down:

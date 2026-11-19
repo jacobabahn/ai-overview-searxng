@@ -1,6 +1,9 @@
 default_profile: fixture
 model_picker: true
 chat_mode: true
+# High enough for the other checks; limit_check.py spends the rest.
+rate_limit:
+  per_reader: 30
 profiles:
   fixture:
     backend: local
