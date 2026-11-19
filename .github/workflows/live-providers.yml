@@ -1,0 +1,39 @@
+name: Live providers
+
+# Sends one short real request per hosted backend through the plugin's provider
+# code, to catch provider-side changes the recorded-response tests cannot see.
+# Each run is billed to the keys below, so it runs only when started by hand.
+# A backend whose secret is missing is skipped with a notice, not failed.
+on:
+  workflow_dispatch:
+    inputs:
+      checks:
+        description: 'Checks to run, separated by spaces (empty runs all of them)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: python -m pip install uv==0.12.15
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Live provider checks
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          CHECKS: ${{ inputs.checks }}
+        # CHECKS is split into names on purpose; it never reaches a shell as code.
+        run: uv run python scripts/live_check.py $CHECKS
