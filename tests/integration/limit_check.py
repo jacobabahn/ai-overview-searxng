@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 import yaml
-from playwright.sync_api import Page, expect, sync_playwright
+from playwright.sync_api import Page, Request, expect, sync_playwright
 
 BASE = "http://127.0.0.1:8899"
 LIMIT = yaml.safe_load(Path(__file__).with_name("overview.yml").read_text())["rate_limit"][
@@ -61,14 +61,12 @@ def main() -> None:
         status = panel.locator(".ai-status")
         # The panel drops its token from the page once mounted; keep the one it sends.
         tokens: list[str] = []
-        page.on(
-            "request",
-            lambda r: (
-                tokens.append(r.post_data_json["token"])
-                if r.url.endswith("/ai-overview/stream")
-                else None
-            ),
-        )
+
+        def record(request: Request) -> None:
+            if request.url.endswith("/ai-overview/stream"):
+                tokens.append((request.post_data_json or {})["token"])
+
+        page.on("request", record)
 
         search(page, "why is the sky blue?")
         cookie = next(c for c in page.context.cookies() if c["name"] == "ai_overview_reader")
