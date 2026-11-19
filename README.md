@@ -61,8 +61,8 @@ container itself.
 
 To use something else:
 
-- **Hosted provider:** set `AI_OVERVIEW_BACKEND` to `openai`, `gemini`,
-  `openrouter`, or `opencode_go`, remove `AI_OVERVIEW_ENDPOINT`, and add
+- **Hosted provider:** set `AI_OVERVIEW_BACKEND` to `openai`, `anthropic`,
+  `gemini`, `openrouter`, or `opencode_go`, remove `AI_OVERVIEW_ENDPOINT`, and add
   `AI_OVERVIEW_API_KEY`. The key stays on the server.
 - **OpenAI-compatible local server:** set the backend to `local` and the endpoint
   to its full `/v1/chat/completions` URL.

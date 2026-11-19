@@ -144,7 +144,7 @@ def test_signed_token_never_exceeds_load_limit() -> None:
 
 
 @pytest.mark.parametrize(
-    "backend", ["local", "ollama", "openai", "openrouter", "gemini", "opencode_go"]
+    "backend", ["local", "ollama", "openai", "openrouter", "gemini", "opencode_go", "anthropic"]
 )
 def test_profile_defaults(backend: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_KEY", "private-value")

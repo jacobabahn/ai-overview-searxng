@@ -31,6 +31,7 @@ def test_each_protocol_names_its_own_levels() -> None:
     assert levels(profile("ollama")) == ("off", "on")
     assert levels(profile("openai")) == ("low", "medium", "high")
     assert levels(profile("local")) == ("off", "low", "medium", "high")
+    assert levels(profile("anthropic")) == ("off", "low", "medium", "high")
     # Readers choose only where the operator opted in.
     assert levels(profile(control=False)) == ()
     assert options("chat", "off") == {"thinking": {"type": "disabled"}}
@@ -77,6 +78,19 @@ def test_sized_thinking_comes_on_top_of_the_answer_limit() -> None:
     off = with_thinking(profile("gemini"), "off")
     _, body = PROTOCOLS["gemini"].request(off, messages, 1200)
     assert body["generationConfig"]["maxOutputTokens"] == 1200
+
+
+def test_anthropic_backend_sends_thinking_levels_on_top_of_the_answer() -> None:
+    messages = [Message("user", "q")]
+    high = with_thinking(profile("anthropic"), "high")
+    url, body = PROTOCOLS["anthropic"].request(high, messages, 1200)
+    assert url == "https://api.anthropic.com/v1/messages"
+    assert body["thinking"] == {"type": "enabled", "budget_tokens": 16384}
+    assert body["max_tokens"] == 1200 + 16384
+    off = quickest(profile("anthropic"))
+    _, body = PROTOCOLS["anthropic"].request(off, messages, 1200)
+    assert body["thinking"] == {"type": "disabled"}
+    assert body["max_tokens"] == 1200
 
 
 def catalog_config(control: bool = True) -> Config:

@@ -18,7 +18,7 @@ service instead of mounting `overview.yml`:
 
 | Variable | Purpose |
 | --- | --- |
-| `AI_OVERVIEW_BACKEND` | Required: `ollama`, `local`, `openai`, `gemini`, `openrouter`, or `opencode_go`. Selects environment mode. |
+| `AI_OVERVIEW_BACKEND` | Required: `ollama`, `local`, `openai`, `anthropic`, `gemini`, `openrouter`, or `opencode_go`. Selects environment mode. |
 | `AI_OVERVIEW_MODEL` | Required: exact model ID. |
 | `AI_OVERVIEW_ENDPOINT` | Optional endpoint override; defaults are the same as YAML profiles. |
 | `AI_OVERVIEW_API_KEY` | Optional key; overrides the backend's standard key variable when set, even if empty. |
@@ -31,7 +31,7 @@ service instead of mounting `overview.yml`:
 | `AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS` | Positive integer; default 1,800. |
 
 Hosted backends also read their usual key variables: `OPENAI_API_KEY`,
-`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. An authenticated
+`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. An authenticated
 local server can use `AI_OVERVIEW_API_KEY`.
 
 An explicit `AI_OVERVIEW_CONFIG` path takes priority over environment mode.
@@ -100,7 +100,7 @@ Each profile:
 | `backend` | required | One of the [backends](#backends). |
 | `model` | required | Exact model ID. |
 | `endpoint` | per backend | See [Backends](#backends). An HTTP(S) URL without credentials, query, or fragment. |
-| `protocol` | per backend | `chat`, `responses`, `anthropic`, `gemini`, or `ollama`. The Gemini and Ollama backends accept only their own. |
+| `protocol` | per backend | `chat`, `responses`, `anthropic`, `gemini`, or `ollama`. The Anthropic, Gemini, and Ollama backends accept only their own. |
 | `api_key_env` | per backend | Environment variable holding the key. |
 | `headers` | none | Extra request headers, as strings. `Host`, `Content-Length`, and `Transfer-Encoding` cannot be set. |
 | `options` | none | Provider parameters, validated per protocol; the accepted fields are listed in [protocols.py](../src/ai_overview/providers/protocols.py). |
@@ -142,9 +142,15 @@ level, and a random ID that scopes the answer cache to that browser.
 | `ollama` | Native chat / NDJSON | Full `/api/chat` URL |
 | `local` | Chat Completions / SSE | Full `/v1/chat/completions` URL |
 | `openai` | Responses / SSE | Default supplied; override with full endpoint |
+| `anthropic` | Anthropic Messages / SSE | Default supplied; override with full `/v1/messages` URL |
 | `gemini` | Native generateContent / SSE | API root ending in `/v1beta`, without model or query |
 | `openrouter` | Chat Completions / SSE | Default supplied |
 | `opencode_go` | Chat Completions, Responses, or Anthropic Messages | Default selected by protocol |
+
+The `anthropic` backend calls the Claude API directly with an Anthropic API key
+from `ANTHROPIC_API_KEY`. Claude 5 models think by default, and that thinking
+counts toward `max_output_tokens`, so give them more than the 1,200-token
+default, for example 4,096, or answers can stop at the output limit.
 
 Overviews aim for 100–180 words, fewer for simple questions, with more detail when
 needed or requested. A follow-up first makes a small planning request to the same
@@ -185,7 +191,9 @@ selected model's protocol can express, sent in that protocol's own terms:
 A budget is added to the request's output limit, so thinking doesn't eat into the
 answer. Planning and suggestion requests on such a profile always use its least
 thinking. Only enable it for models that accept these fields; a provider that
-rejects them fails the request.
+rejects them fails the request. On the `anthropic` backend that means models
+with manual extended thinking, such as Claude Haiku 4.5; Claude 5 models reject
+a thinking budget, and most of them reject `disabled` too.
 
 ## Chat mode and suggestions
 

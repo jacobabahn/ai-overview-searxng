@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Anthropic backend.** `backend: anthropic` (or `AI_OVERVIEW_BACKEND=anthropic`)
+  calls the Claude API directly with the key in `ANTHROPIC_API_KEY`.
+
 ## [0.1.0] - 2026-11-17
 
 First release. The plugin adds an AI overview to SearXNG: end a search with `?`

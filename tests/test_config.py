@@ -56,6 +56,57 @@ def test_environment_credentials_and_protocol(monkeypatch: pytest.MonkeyPatch) -
     assert Config.load().profiles["default"].api_key == ""
 
 
+def test_environment_only_anthropic_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_OVERVIEW_BACKEND", "anthropic")
+    monkeypatch.setenv("AI_OVERVIEW_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-secret")
+    config = Config.load()
+    profile = config.profiles["default"]
+    assert profile.backend == "anthropic"
+    assert profile.model == "claude-haiku-5-5"
+    assert profile.protocol == "anthropic"
+    assert profile.endpoint == "https://api.anthropic.com/v1/messages"
+    assert profile.api_key == "provider-secret"
+    assert profile.api_key_env == "ANTHROPIC_API_KEY"
+    assert config.warnings() == []
+    assert "provider-secret" not in repr(config)
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    assert Config.load().warnings() == [
+        "Profile default has no API key: ANTHROPIC_API_KEY is unset or empty"
+    ]
+
+
+def test_yaml_anthropic_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-secret")
+    path = tmp_path / "overview.yml"
+    path.write_text(
+        "default_profile: claude\n"
+        "model_picker: true\n"
+        "profiles:\n"
+        "  claude:\n"
+        "    backend: anthropic\n"
+        "    model: claude-sonnet-5-5\n"
+        "    thinking_control: true\n"
+        "    options:\n"
+        "      temperature: 1\n"
+    )
+    profile = Config.load(path).profiles["claude"]
+    assert profile.endpoint == "https://api.anthropic.com/v1/messages"
+    assert profile.protocol == "anthropic"
+    assert profile.api_key == "provider-secret"
+    assert profile.options == {"temperature": 1}
+    assert profile.thinking_control
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [{"protocol": "chat"}, {"options": {"reasoning": {"effort": "low"}}}, {"discover_models": True}],
+)
+def test_anthropic_backend_rejects_other_protocols_and_options(patch: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        Config.from_dict(profile_config(backend="anthropic", **patch))
+
+
 def test_file_precedence(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     default = tmp_path / "overview.yml"
     write_config(default)
@@ -212,6 +263,7 @@ def test_warns_about_unset_key_variables(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "present")
     monkeypatch.delenv("MY_LOCAL_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     config = Config.from_dict(
         {
             "default_profile": "ready",
@@ -221,6 +273,7 @@ def test_warns_about_unset_key_variables(monkeypatch: pytest.MonkeyPatch) -> Non
                 "empty": {"backend": "gemini", "model": "m"},
                 "named": {"backend": "local", "model": "m", "api_key_env": "MY_LOCAL_KEY"},
                 "opted_out": {"backend": "openai", "model": "m", "api_key_env": None},
+                "claude": {"backend": "anthropic", "model": "m"},
                 "ollama": {"backend": "ollama", "model": "m"},
                 "local": {"backend": "local", "model": "m"},
             },
@@ -233,6 +286,7 @@ def test_warns_about_unset_key_variables(monkeypatch: pytest.MonkeyPatch) -> Non
         "Profile empty has no API key: GEMINI_API_KEY is unset or empty",
         "Profile named has no API key: MY_LOCAL_KEY is unset or empty",
         "Profile opted_out has no API key: api_key_env names no variable",
+        "Profile claude has no API key: ANTHROPIC_API_KEY is unset or empty",
     ]
 
 

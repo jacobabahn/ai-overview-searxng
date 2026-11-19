@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 DEFAULTS = {
     "openai": ("responses", "https://api.openai.com/v1/responses", "OPENAI_API_KEY"),
+    "anthropic": ("anthropic", "https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY"),
     "openrouter": ("chat", "https://openrouter.ai/api/v1/chat/completions", "OPENROUTER_API_KEY"),
     "opencode_go": (
         "chat",
