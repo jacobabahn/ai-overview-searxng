@@ -545,7 +545,7 @@ function mount(panel) {
     }
     if (event.name === "turn_error") {
       // Stopping is the reader's own doing, not a failure.
-      say(event.data.message, event.data.stopped ? "stopped" : "error");
+      say(event.data.message, event.data.stopped ? "stopped" : event.data.code === "rate_limited" ? "limit" : "error");
       if (!activeTurn.text) preview.textContent = status.textContent;
       // What went wrong, and Retry, sit under whatever was written; a follow-up
       // already has them docked there.

@@ -226,6 +226,25 @@ test("provider limits, other HTTP failures, and partial answers never auto-retry
   }
 });
 
+test("a reached request limit is a notice with nothing to retry", async t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const {conversation: c, calls, events} = harness(false);
+  let work = c.run(); calls[0].resolve(done("continuation")); await work;
+  work = c.run("Why?");
+  calls[1].resolve(sse(["error", {code: "rate_limited", message: "Try again in about 40 minutes."}]));
+  await work;
+  const error = events.findLast(e => e.event.name === "turn_error");
+  assert.deepEqual(error.event.data, {code: "rate_limited", stopped: false, message: "Try again in about 40 minutes."});
+  assert.equal(c.state.canRetry, false);
+  assert.equal(c.state.canFollowUp, true);
+  await c.retry();
+  assert.equal(events.some(e => e.event.name === "waiting"), false);
+  t.mock.timers.tick(60000); await tick(); assert.equal(calls.length, 2);
+  // The reader can still ask again later, from the same continuation.
+  work = c.run("Why?"); assert.equal(calls[2].body.token, "continuation");
+  calls[2].resolve(done("next")); await work;
+});
+
 test("the browser cache ID is sent with requests, and Regenerate asks for a fresh answer", async () => {
   const {conversation: c, calls} = harness(false, "browser-id");
   let work = c.start(); calls[0].resolve(done("continuation")); await work;

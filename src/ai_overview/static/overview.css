@@ -156,10 +156,15 @@
 @keyframes ai-status-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
 /* A failure reads as one: marked, in body colour, with its way out right below. */
 .ai-overview .ai-status[data-tone] { color: var(--ai-text); }
-.ai-overview .ai-status[data-tone="error"] { display: flex; align-items: flex-start; gap: 0.5rem; }
-.ai-overview .ai-status[data-tone="error"]::before {
+.ai-overview .ai-status:is([data-tone="error"], [data-tone="limit"]) { display: flex; align-items: flex-start; gap: 0.5rem; }
+.ai-overview .ai-status:is([data-tone="error"], [data-tone="limit"])::before {
   content: ""; flex: none; width: 1.125rem; height: 1.125rem; margin-block-start: 0.15rem; background: var(--ai-error);
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5v5.5M12 16.5v.01'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* A reached request limit is a quiet notice: a muted clock, and nothing to retry. */
+.ai-overview .ai-status[data-tone="limit"]::before {
+  background: var(--ai-muted);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
 .ai-overview .ai-actions { display: flex; gap: 0.5rem; }
 .ai-overview .ai-actions button { min-height: 44px; padding-inline: 1rem; font-weight: 600; background: var(--ai-tint); border-color: transparent; }

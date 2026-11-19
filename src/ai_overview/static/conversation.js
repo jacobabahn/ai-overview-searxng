@@ -362,7 +362,8 @@ export class Conversation {
       }
       this.#emit("turn_done");
     } catch (error) {
-      this.#failed = true;
+      // A reached request limit is a notice, not a failure: there is nothing to retry.
+      this.#failed = error.code !== "rate_limited";
       const stopped = operation.phase === "waiting"
         ? "Waiting canceled. You can retry when you’re ready."
         : "Stopped. This answer is incomplete.";

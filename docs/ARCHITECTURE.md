@@ -41,6 +41,8 @@ sequenceDiagram
 - `service.py`: prompt construction, follow-up planning, evidence selection,
   normalized events, and successful conversation updates.
 - `cache.py`: per-worker, in-memory cache of completed first answers.
+- `limits.py`: request limits per reader and per instance, the signed reader
+  cookie, and their counters in Valkey or worker memory.
 - `providers/protocols.py`: one adapter per wire protocol (Chat Completions,
   Responses, Anthropic Messages, Gemini, and Ollama's native chat), each owning its
   options and their validation, auth headers, request body, framing, decoding, and
@@ -195,11 +197,32 @@ pass only the browser ID and `fresh`. `AnswerCache.get`/`put` is the seam for a
 shared store if per-worker hit rates prove too low. Hits and misses are logged at
 debug level without keys.
 
+## Request limits
+
+`rate_limit` is off by default. When set, `GenerationService.run` calls
+`Limiter.admit` once per turn, just before the turn's first provider request:
+before follow-up planning, or for a first answer once it has evidence and fits
+the input budget. Cache hits, busy refusals and suggestions never reach it.
+Refusal is an `error` event with code `rate_limited`, which the browser shows
+as a notice without Retry and never retries automatically.
+
+The reader is the `ai_overview_reader` cookie, a random ID signed with the
+signing secret (its own salt) and issued with the results page, or with the
+stream response when it was missing. Without a valid cookie the reader is the
+address in `request.remote_addr`, which SearXNG's ProxyFix has already resolved;
+IPv6 addresses are grouped by /64. Counters are fixed windows: a reader's starts
+at its first counted generation, and the instance's is the UTC day. The reader
+is counted first; if the instance then refuses, the reader's count is taken back.
+`ValkeyCounter` uses SearXNG's Valkey client (`SET NX EX`, `INCR`, `PTTL` in one
+transaction; keys prefixed `SearXNG_ai_overview_limit_` and holding HMACs);
+`MemoryCounter` is per worker and is also the fallback when Valkey fails.
+
 ## Browser contract
 
 Use `fetch` with a POST body and streaming SSE response. Requests may include
 the answer-cache `client` ID and `fresh`. Events are `status`,
-`sources`, `text_delta`, `done`, and `error`. A `done` event includes the next
+`sources`, `text_delta`, `done`, and `error`; an `error` with code
+`rate_limited` is a request-limit notice. A `done` event includes the next
 signed continuation. AbortController handles Stop and page navigation.
 
 Render a limited Markdown subset with DOM nodes: paragraphs, headings, lists,

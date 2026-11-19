@@ -7,11 +7,21 @@ from threading import BoundedSemaphore, Lock
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from flask import Blueprint, Flask, Response, jsonify, render_template, request, stream_with_context
+from flask import (
+    Blueprint,
+    Flask,
+    Response,
+    after_this_request,
+    jsonify,
+    render_template,
+    request,
+    stream_with_context,
+)
 from markupsafe import Markup
 
 from .catalog import ModelCatalog
 from .errors import OverviewError
+from .limits import READER_COOKIE, READER_COOKIE_SECONDS
 from .models import Conversation, Event
 from .service import GenerationService
 from .state import MAX_STATE_BYTES
@@ -114,12 +124,17 @@ def register(
                         "invalid_request", "Enter a question under 2,000 characters."
                     )
                 question = question.strip()
-            # Cached answers cost nothing, so they bypass the concurrency limit.
+            # Cached answers cost nothing, so they bypass the concurrency and request limits.
             hit = service.replay(state, question, client, fresh)
         except OverviewError as error:
             return _error_response(error, 403 if error.code == "invalid_state" else 400)
         if hit:
             return _stream_response(sse_event(event) for event in hit)
+        reader, known = "", True
+        if service.limiter:
+            reader, known = service.limiter.reader(
+                request.cookies.get(READER_COOKIE), request.remote_addr
+            )
         if not slots.acquire(blocking=False):
             return _error_response(
                 OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
@@ -134,7 +149,7 @@ def register(
         def generate() -> Iterator[str]:
             try:
                 yield ": connected\n\n"
-                for event in service.run(state, question, client, suggest):
+                for event in service.run(state, question, client, suggest, reader):
                     yield sse_event(event)
                     # Suggestions may follow a finished answer; they don't hold its slot.
                     if event.name == "done":
@@ -155,6 +170,9 @@ def register(
         response = _stream_response(generate())
         # A response closed before its body is read never starts generate().
         response.call_on_close(release)
+        if not known:
+            # This turn counts against the address; later ones against the browser.
+            _issue_reader(service, response)
         return response
 
     app.register_blueprint(bp)
@@ -174,6 +192,16 @@ def _stream_response(body: Iterator[str]) -> Response:
 
 def render_panel(service: GenerationService, state: Conversation) -> Markup:
     profile = service.config.profiles[state.profile]
+    limiter = service.limiter
+    if limiter and limiter.per_reader:
+        _, known = limiter.reader(request.cookies.get(READER_COOKIE), request.remote_addr)
+        if not known:
+            # Issued with the results page, so even the first overview counts per browser.
+            @after_this_request
+            def issue(response: Response) -> Response:
+                _issue_reader(service, response)
+                return response
+
     return Markup(
         render_template(
             "overview.html",
@@ -184,6 +212,26 @@ def render_panel(service: GenerationService, state: Conversation) -> Markup:
             profile=state.profile,
             model=state.model or profile.model,
         )
+    )
+
+
+def _issue_reader(service: GenerationService, response: Response) -> None:
+    """Give the browser a signed reader identity.
+
+    Its path is SearXNG's root: the results page must see it too, or every search
+    would hand out a new one.
+    """
+    limiter = service.limiter
+    if not (limiter and limiter.per_reader):
+        return
+    response.set_cookie(
+        READER_COOKIE,
+        limiter.new_reader_cookie(),
+        max_age=READER_COOKIE_SECONDS,
+        path=request.script_root or "/",
+        secure=request.is_secure,
+        httponly=True,
+        samesite="Lax",
     )
 
 

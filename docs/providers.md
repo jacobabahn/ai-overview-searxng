@@ -8,6 +8,7 @@ after any change. There is no automatic fallback to another provider or model.
 - [Environment-only configuration](#environment-only-configuration)
 - [YAML configuration](#yaml-configuration) and its [settings reference](#settings-reference)
 - [Backends](#backends), [thinking](#thinking), [chat mode](#chat-mode-and-suggestions)
+- [Request limits](#request-limits)
 - [Keys and the signing secret](#keys-and-the-signing-secret)
 - Worked examples: [local Ollama](#local-ollama), [OpenCode Go](#opencode-go-live-instance)
 
@@ -29,6 +30,9 @@ service instead of mounting `overview.yml`:
 | `AI_OVERVIEW_OPTIONS` | JSON object of validated provider options, e.g. `'{"think":false,"num_ctx":8192}'` for Ollama. |
 | `AI_OVERVIEW_ANSWER_CACHE_ENTRIES` | Non-negative integer; default 256. `0` disables the answer cache. |
 | `AI_OVERVIEW_ANSWER_CACHE_TTL_SECONDS` | Positive integer; default 1,800. |
+| `AI_OVERVIEW_RATE_LIMIT_PER_READER` | Positive integer; off by default. See [request limits](#request-limits). |
+| `AI_OVERVIEW_RATE_LIMIT_WINDOW_SECONDS` | Positive integer; default 3,600. |
+| `AI_OVERVIEW_RATE_LIMIT_INSTANCE_PER_DAY` | Positive integer; off by default. |
 
 Hosted backends also read their usual key variables: `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. An authenticated
@@ -89,9 +93,10 @@ Unknown settings and wrong-typed values fail configuration. Top level:
 | `evidence_bytes` | 12,000 | Size budget for those results' snippets; at most 24,000. |
 | `max_turns` | 6 | Answers per conversation, including the first; at most 12. |
 | `token_ttl_seconds` | 1,800 | How long a results page can keep its conversation going before it asks for a new search. |
-| `max_concurrent` | 2 | Generations each SearXNG worker runs at once; chat-mode suggestion requests get the same number again. Further requests are told the summary is busy and retry. There are no per-user limits. |
+| `max_concurrent` | 2 | Generations each SearXNG worker runs at once; chat-mode suggestion requests get the same number again. Further requests are told the summary is busy and retry. To limit how many each reader or the whole instance can ask for, use `rate_limit`. |
 | `answer_cache_entries` | 256 | Completed first answers kept in each worker's memory, so reloading or repeating a search does not pay for a new generation. `0` disables the cache. Entries are scoped to one browser; Regenerate always asks the model again. |
 | `answer_cache_ttl_seconds` | 1,800 | How long a cached answer is reused. |
+| `rate_limit` | off | Limits on generations per reader and per instance; see [Request limits](#request-limits). |
 
 Each profile:
 
@@ -211,6 +216,43 @@ serves requests in parallel, such as a hosted API, set `parallel_suggestions: tr
 on the profile to start it alongside the answer while chatting, from the question
 and its snippets, so the suggestions are ready when the answer ends. Leave it off
 for a local server that runs one request at a time, where it would delay the answer.
+
+## Request limits
+
+By default the only brake on provider costs is `max_concurrent`. To limit how
+many overviews readers can ask for, add `rate_limit`. Every key is optional;
+without `per_reader` or `instance_per_day` nothing is limited:
+
+```yaml
+rate_limit:
+  per_reader: 20          # generations per reader in each window
+  window_seconds: 3600    # the reader's window, starting at their first counted generation
+  instance_per_day: 500   # generations for everyone together per UTC day
+```
+
+What counts is each generation that calls the provider: a first overview, a
+follow-up, Retry, and Regenerate. A first overview replayed from the answer
+cache does not count, and follow-up planning and chat-mode suggestions ride on
+the turn they belong to. A turn the instance cap refuses does not count against
+the reader. At a limit, the panel says so quietly and roughly when it resets,
+with no Retry and no automatic retries. Search results are not affected.
+
+**Who is a reader.** With `per_reader` set, the results page gives each browser
+an HttpOnly cookie, `ai_overview_reader`, holding a random ID signed with the
+[signing secret](#keys-and-the-signing-secret), so a browser cannot pick its own
+identity. A request without a valid cookie (cookies blocked, or a script)
+counts against its client address, as SearXNG resolves it from
+`botdetection.trusted_proxies` and the forwarded headers; an IPv6 address counts
+as its /64. A reader who clears cookies or opens a private window starts a new
+allowance. That is why `instance_per_day` exists: it is the real cap on the
+bill. Counters store keyed hashes of the cookie or address, never the values.
+
+**Several workers.** When SearXNG's `settings.yml` configures Valkey
+(`valkey.url`, which its limiter also uses), the counts live there and every
+worker shares them. Without Valkey each worker keeps its own counts in memory,
+so the effective limits are the configured ones times the number of workers,
+and a restart resets them. If Valkey stops responding, counting falls back to
+each worker's memory until it is back.
 
 ## Local Ollama
 
