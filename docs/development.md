@@ -68,16 +68,20 @@ for one word keeps a passing request to a few dozen.
 |---|---|---|---|
 | `openai` | `gpt-5-nano` | Low | `OPENAI_API_KEY` |
 | `anthropic` | `claude-haiku-5-5` | Off | `ANTHROPIC_API_KEY` |
-| `gemini` | `gemini-2.5-flash-lite` | Off | `GEMINI_API_KEY` |
+| `gemini` | `gemini-3.5-flash-lite` | none | `GEMINI_API_KEY` |
 | `openrouter` | `meta-llama/llama-3.1-8b-instruct` | none | `OPENROUTER_API_KEY` |
 | `opencode_go-chat` | `deepseek-v4.1-flash` | Off | `OPENCODE_GO_API_KEY` |
 | `opencode_go-responses` | `gpt-6-luna` | Low | `OPENCODE_GO_API_KEY` |
 | `opencode_go-anthropic` | `claude-haiku-5-5` | Off | `OPENCODE_GO_API_KEY` |
 
-The models are the cheapest small ones on each backend as of November 2026. When
-one is retired, the check fails; change its model in the `CHECKS` table at the
-top of the script. OpenRouter has no thinking request, because the chat
-protocol's thinking fields follow DeepSeek's API, not an OpenRouter parameter.
+The models are the cheapest small ones each backend offers to a new account as
+of November 2026. Gemini uses 3.5 Flash-Lite, not the cheaper 2.5 Flash-Lite,
+because Google limits the 2.5 models to accounts that already used them. When a
+model is retired, the check fails; change its model in the `CHECKS` table at the
+top of the script. Two checks send no thinking request. For Gemini 3.5 models,
+Google documents only `thinkingLevel`, not the `thinkingBudget` the plugin
+sends. On OpenRouter, the chat protocol's thinking fields follow DeepSeek's API,
+not an OpenRouter parameter.
 
 Run it locally with any of the keys set. A check whose key is unset or empty is
 skipped, so with no keys it skips everything and exits 0:

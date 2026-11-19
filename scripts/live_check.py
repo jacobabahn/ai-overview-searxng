@@ -50,13 +50,16 @@ class Check:
     thinking: Optional[str] = None
 
 
-# Models and prices checked 2026-11-18. On OpenRouter the chat protocol's thinking
-# fields follow DeepSeek's API rather than an OpenRouter parameter, so it has no
-# thinking request; Go's chat check covers those fields on DeepSeek itself.
+# Models and prices checked 2026-11-18. Gemini uses 3.5 Flash-Lite because Google
+# limits the 2.5 models to accounts that already used them. Two checks send no
+# thinking request: Google documents only thinkingLevel for Gemini 3.5 models, not
+# the thinkingBudget the gemini protocol sends, and on OpenRouter the chat
+# protocol's thinking fields follow DeepSeek's API rather than an OpenRouter
+# parameter (Go's chat check covers those fields on DeepSeek itself).
 CHECKS = (
     Check("openai", "openai", "gpt-5-nano", thinking="low"),
     Check("anthropic", "anthropic", "claude-haiku-5-5", thinking="off"),
-    Check("gemini", "gemini", "gemini-2.5-flash-lite", thinking="off"),
+    Check("gemini", "gemini", "gemini-3.5-flash-lite"),
     Check("openrouter", "openrouter", "meta-llama/llama-3.1-8b-instruct"),
     Check("opencode_go-chat", "opencode_go", "deepseek-v4.1-flash", "chat", "off"),
     Check("opencode_go-responses", "opencode_go", "gpt-6-luna", "responses", "low"),
@@ -112,6 +115,11 @@ class ProviderReasons(logging.Handler):
         return " ".join(messages)
 
 
+def cell(text: str) -> str:
+    """Text for one Markdown table cell; provider reasons may contain pipes or newlines."""
+    return " ".join(text.split()).replace("|", "\\|")
+
+
 class Report:
     def __init__(self) -> None:
         self.failed = False
@@ -122,15 +130,16 @@ class Report:
         print(f"skip  {check.name}: {reason}")
         if self.github:
             print(f"::notice title=Skipped {check.name}::{reason}")
-        self.rows.append(f"| {check.name} | | skipped | {reason} |")
+        self.rows.append(f"| {check.name} | | skipped | {cell(reason)} |")
 
     def result(self, check: Check, label: str, outcome: str, detail: str) -> None:
+        detail = " ".join(detail.split())
         print(f"{outcome:<5} {check.name} {label}: {detail}")
         if outcome == "FAIL":
             self.failed = True
             if self.github:
                 print(f"::error title=Live check {check.name} failed::{label}: {detail}")
-        self.rows.append(f"| {check.name} | {label} | {outcome.lower()} | {detail} |")
+        self.rows.append(f"| {check.name} | {label} | {outcome.lower()} | {cell(detail)} |")
 
     def summary(self) -> None:
         path = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -138,7 +147,7 @@ class Report:
             return
         with open(path, "a", encoding="utf-8") as file:
             file.write("| Check | Request | Result | Detail |\n| --- | --- | --- | --- |\n")
-            file.write("\n".join(row.replace("\n", " ") for row in self.rows) + "\n")
+            file.write("\n".join(self.rows) + "\n")
 
 
 def run(check: Check, transport: Transport, report: Report, reasons: ProviderReasons) -> None:

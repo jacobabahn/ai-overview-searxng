@@ -90,17 +90,42 @@ def test_without_keys_every_check_is_skipped(capsys: pytest.CaptureFixture[str])
     assert "OPENCODE_GO_API_KEY is not set" in out
 
 
-def test_a_completed_stream_passes_with_and_without_thinking(
+def test_a_completed_stream_passes(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "key")
     transport = GeminiStream()
     assert live.main(["gemini"], transport) == 0
+    (config,) = [body["generationConfig"] for body in transport.bodies]
+    assert "thinkingConfig" not in config
+    assert config["maxOutputTokens"] == live.MAX_OUTPUT_TOKENS
+    assert "pass  gemini gemini-3.5-flash-lite: 'Ready'" in capsys.readouterr().out
+
+
+def test_a_thinking_level_adds_a_second_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "key")
+    monkeypatch.setattr(live, "CHECKS", (live.Check("gemini", "gemini", "m", thinking="low"),))
+    transport = GeminiStream()
+    assert live.main([], transport) == 0
     configs = [body["generationConfig"] for body in transport.bodies]
     assert "thinkingConfig" not in configs[0]
-    assert configs[1]["thinkingConfig"] == {"thinkingBudget": 0}
-    assert configs[0]["maxOutputTokens"] == live.MAX_OUTPUT_TOKENS
-    assert capsys.readouterr().out.count("pass  gemini") == 2
+    assert configs[1]["thinkingConfig"] == {"thinkingBudget": 1024}
+    assert configs[1]["maxOutputTokens"] == live.MAX_OUTPUT_TOKENS + 1024
+    assert "pass  gemini m, thinking low:" in capsys.readouterr().out
+
+
+def test_summary_cells_keep_provider_text_in_one_cell(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    report = live.Report()
+    report.result(live.CHECKS[0], "m", "FAIL", "error (a | b\nc)")
+    report.summary()
+    row = summary.read_text().splitlines()[-1]
+    assert row == "| openai | m | fail | error (a \\| b c) |"
 
 
 def test_an_unfinished_stream_fails_and_is_reported_to_github(
@@ -112,10 +137,10 @@ def test_an_unfinished_stream_fails_and_is_reported_to_github(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     assert live.main([], GeminiStream(finish=None)) == 1
     out = capsys.readouterr().out
-    assert "FAIL  gemini gemini-2.5-flash-lite: interrupted" in out
+    assert "FAIL  gemini gemini-3.5-flash-lite: interrupted" in out
     assert "::error title=Live check gemini failed::" in out
     assert "::notice title=Skipped openai::OPENAI_API_KEY is not set" in out
-    assert "| gemini | gemini-2.5-flash-lite | fail |" in summary.read_text()
+    assert "| gemini | gemini-3.5-flash-lite | fail |" in summary.read_text()
 
 
 def test_unknown_check_names_are_refused(capsys: pytest.CaptureFixture[str]) -> None:
