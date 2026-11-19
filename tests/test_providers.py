@@ -1,7 +1,7 @@
 import json
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 import pytest
@@ -97,7 +97,7 @@ def payload(protocol: str, finish: bool = True) -> bytes:
 
 
 @pytest.mark.parametrize(
-    "backend", ["local", "ollama", "openai", "openrouter", "gemini", "opencode_go"]
+    "backend", ["local", "ollama", "openai", "openrouter", "gemini", "opencode_go", "anthropic"]
 )
 def test_fragmented_stream_and_request_mapping(
     backend: str, monkeypatch: pytest.MonkeyPatch
@@ -163,6 +163,81 @@ def test_go_anthropic_request_and_completion(monkeypatch: pytest.MonkeyPatch) ->
     broken = RecordingTransport(frame({"type": "message_stop"}))
     with pytest.raises(OverviewError):
         list(Provider(p, broken).stream([Message("user", "q")], "session"))
+
+
+def test_direct_anthropic_request_and_recorded_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_PROVIDER_KEY", "secret")
+    # A trimmed recording of a streamed Messages reply from a Claude 5 model:
+    # thinking (hidden), then text, then the stop reason.
+    recorded = (
+        b"event: message_start\n"
+        b'data: {"type":"message_start","message":{"id":"msg_01","type":"message",'
+        b'"role":"assistant","content":[],"model":"test-model","stop_reason":null,'
+        b'"usage":{"input_tokens":12,"output_tokens":1}}}\n\n'
+        b"event: content_block_start\n"
+        b'data: {"type":"content_block_start","index":0,'
+        b'"content_block":{"type":"thinking","thinking":"","signature":""}}\n\n'
+        b"event: ping\n"
+        b'data: {"type":"ping"}\n\n'
+        b"event: content_block_delta\n"
+        b'data: {"type":"content_block_delta","index":0,'
+        b'"delta":{"type":"signature_delta","signature":"sig"}}\n\n'
+        b"event: content_block_stop\n"
+        b'data: {"type":"content_block_stop","index":0}\n\n'
+        b"event: content_block_start\n"
+        b'data: {"type":"content_block_start","index":1,'
+        b'"content_block":{"type":"text","text":""}}\n\n'
+        b"event: content_block_delta\n"
+        b'data: {"type":"content_block_delta","index":1,'
+        b'"delta":{"type":"text_delta","text":"Paris is the capital"}}\n\n'
+        b"event: content_block_delta\n"
+        b'data: {"type":"content_block_delta","index":1,'
+        b'"delta":{"type":"text_delta","text":" of France [1]."}}\n\n'
+        b"event: content_block_stop\n"
+        b'data: {"type":"content_block_stop","index":1}\n\n'
+        b"event: message_delta\n"
+        b'data: {"type":"message_delta","delta":{"stop_reason":"end_turn",'
+        b'"stop_sequence":null},"usage":{"output_tokens":40}}\n\n'
+        b"event: message_stop\n"
+        b'data: {"type":"message_stop"}\n\n'
+    )
+    transport = RecordingTransport(recorded)
+    p = replace(profile("anthropic"), headers={"Authorization": "Bearer stray"})
+    answer = "".join(
+        Provider(p, transport).stream(
+            [Message("system", "instructions"), Message("user", "q")], "session"
+        )
+    )
+    assert answer == "Paris is the capital of France [1]."
+    url, headers, body = transport.calls[0]
+    assert url == "https://api.anthropic.com/v1/messages"
+    assert headers["x-api-key"] == "secret"
+    assert headers["anthropic-version"] == "2023-06-01"
+    assert "Authorization" not in headers
+    assert "x-opencode-session" not in headers
+    assert body == {
+        "model": "test-model",
+        "stream": True,
+        "max_tokens": p.max_output_tokens,
+        "system": "instructions",
+        "messages": [{"role": "user", "content": "q"}],
+    }
+
+
+def test_direct_anthropic_stops_are_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_PROVIDER_KEY", "secret")
+    p = profile("anthropic")
+    text = frame({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "a"}})
+    for reason, code in [("max_tokens", "output_limit"), ("refusal", "incomplete")]:
+        stopped = text + frame({"type": "message_delta", "delta": {"stop_reason": reason}})
+        with pytest.raises(OverviewError) as caught:
+            list(Provider(p, RecordingTransport(stopped)).stream([Message("user", "q")], "s"))
+        assert caught.value.code == code
+    overloaded = text + frame(
+        {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+    )
+    with pytest.raises(OverviewError):
+        list(Provider(p, RecordingTransport(overloaded)).stream([Message("user", "q")], "s"))
 
 
 def test_multiline_sse_and_oversize() -> None:

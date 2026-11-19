@@ -81,3 +81,26 @@ def test_signed_selection_remains_pinned_when_default_changes() -> None:
         p.protocol,
         p.endpoint,
     )
+
+
+def test_anthropic_selection_keeps_the_configured_endpoint() -> None:
+    p = Config.from_dict(
+        {
+            "default_profile": "claude",
+            "profiles": {
+                "claude": {
+                    "backend": "anthropic",
+                    "model": "claude-sonnet-5-5",
+                    "endpoint": "https://gateway.example/v1/messages",
+                    "options": {"thinking": {"type": "disabled"}, "temperature": 1},
+                }
+            },
+        }
+    ).profiles["claude"]
+    state = replace(initial_state("q?", (), "claude"), model=p.model, protocol=p.protocol)
+    assert selected_profile(p, state) == p
+    switched = replace(state, model="claude-haiku-5-5")
+    selected = selected_profile(p, switched)
+    assert selected.endpoint == "https://gateway.example/v1/messages"
+    assert selected.protocol == "anthropic"
+    assert selected.options == {"temperature": 1}

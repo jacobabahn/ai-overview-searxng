@@ -111,6 +111,7 @@ source map; citations cannot silently change when follow-ups retrieve new pages.
 | Profile backend | Initial protocol |
 | --- | --- |
 | OpenAI | Responses |
+| Anthropic | Anthropic Messages |
 | OpenRouter | Chat Completions |
 | Local compatible server | Chat Completions |
 | OpenCode Go | Chat Completions, Responses, or Anthropic Messages for the selected model |
@@ -264,6 +265,7 @@ quality.
 
 - [SearXNG plugin API](https://docs.searxng.org/dev/plugins/development.html)
 - [OpenAI streaming](https://developers.openai.com/api/docs/guides/streaming-responses)
+- [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages/create)
 - [Gemini generation API](https://ai.google.dev/api/generate-content)
 - [Ollama chat API](https://docs.ollama.com/api/chat)
 - [OpenRouter chat API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion)

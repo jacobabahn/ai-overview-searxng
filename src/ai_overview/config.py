@@ -174,6 +174,8 @@ class Config:
                 raise ValueError("The Gemini backend requires the gemini protocol")
             if backend == "ollama" and values["protocol"] != "ollama":
                 raise ValueError("The Ollama backend requires the ollama protocol")
+            if backend == "anthropic" and values["protocol"] != "anthropic":
+                raise ValueError("The Anthropic backend requires the anthropic protocol")
             try:
                 url = urlsplit(values["endpoint"])
                 valid = url.scheme in {"http", "https"} and url.hostname and not url.username

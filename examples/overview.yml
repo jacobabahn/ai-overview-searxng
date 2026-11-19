@@ -36,6 +36,13 @@ profiles:
     api_key_env: OPENAI_API_KEY
     # Uses Responses. Configure output/reasoning budgets for your model.
 
+  anthropic:
+    backend: anthropic
+    model: your-claude-model
+    api_key_env: ANTHROPIC_API_KEY
+    # Claude 5 models think by default; leave room for it in the output limit.
+    max_output_tokens: 4096
+
   gemini:
     backend: gemini
     model: your-gemini-model
