@@ -10,6 +10,19 @@ All notable changes to this project are documented here. The format follows
 
 - **Anthropic backend.** `backend: anthropic` (or `AI_OVERVIEW_BACKEND=anthropic`)
   calls the Claude API directly with the key in `ANTHROPIC_API_KEY`.
+- **Request limits.** Optional `rate_limit` (or `AI_OVERVIEW_RATE_LIMIT_*`)
+  limits overviews per reader over a window and for the whole instance per day.
+  Cache hits are free. At a limit the panel shows a quiet notice with roughly
+  when it resets; search results are unaffected. Readers are told apart by a
+  signed browser cookie, else their address. Counts are shared through SearXNG's
+  Valkey when it has one, and are per worker otherwise.
+
+### Changed
+
+- The 0.1.0 known limitation "no per-user rate or spending limits" now applies
+  only while `rate_limit` is unset, which is still the default. A reader who
+  clears cookies gets a new per-reader allowance; `instance_per_day` is the cap
+  on the bill.
 
 ## [0.1.0] - 2026-11-17
 

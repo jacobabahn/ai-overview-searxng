@@ -135,8 +135,11 @@ Open <http://127.0.0.1:8765>.
   SearXNG settings.
 - Answers are written from search snippets, not full pages. A citation shows
   which source the model was given; it does not prove the claim is correct.
-- There are no per-user rate or spending limits, only a per-worker cap on
+- Request limits are off by default, leaving only a per-worker cap on
   simultaneous generations, so a public instance can run up provider costs.
+  `rate_limit` limits overviews per reader (by a signed browser cookie, else the
+  client address) and for the whole instance per day. Clearing cookies starts a
+  new per-reader allowance; the instance cap does not reset that way.
 - Completed first answers are kept in server memory, by default for 30 minutes
   per browser, so repeating a search does not pay for a new generation.
 
@@ -153,6 +156,7 @@ the answer cache, and how follow-ups are searched.
 | "The selected provider needs an API key." | The log warns at startup about each profile whose key variable is unset or empty. Pass the variable into the SearXNG container, or point `api_key_env` at the one you set. |
 | Local model unreachable | Test the endpoint from inside the container. Enable HTTP on the `ai_overview` network for HTTP endpoints. |
 | Answer arrives all at once | Disable reverse-proxy buffering for `/ai-overview/stream` and set its read timeout longer than the configured generation timeout. |
+| "You’ve reached the AI Summary limit" | The reader, or the whole instance, reached a [`rate_limit`](docs/providers.md#request-limits); the notice says roughly when it resets. |
 | Summary stays busy | The worker has reached its generation limit. Automatic retries are bounded; wait for active requests to finish or use Retry. |
 
 ## Development

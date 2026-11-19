@@ -13,6 +13,13 @@ max_concurrent: 2
 # Per-worker memory cache of first answers; 0 disables it.
 answer_cache_entries: 256
 answer_cache_ttl_seconds: 1800
+# Off unless set. Counts generations that call the provider (not cache hits) per
+# browser, else per address, and for everyone per UTC day. Shared across workers
+# only when SearXNG has Valkey configured.
+# rate_limit:
+#   per_reader: 20
+#   window_seconds: 3600
+#   instance_per_day: 500
 
 profiles:
   ollama:

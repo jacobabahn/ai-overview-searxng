@@ -30,7 +30,10 @@ follow-up retrieval, model selection, desktop/mobile layouts, keyboard behavior,
 empty evidence, provider errors, retry, and Stop. The container check makes
 sure the plugin leaves SearXNG's result container open in `post_search`: a
 fixture plugin forced to run after it still shows its answer, and a one-result
-fixture engine's score on `/stats` is counted once per search. Screenshots go to ignored
+fixture engine's score on `/stats` is counted once per search. The limit check
+spends one browser's `rate_limit.per_reader` allowance (set in the fixture's
+`overview.yml`) and checks the notice, that cache hits stay free, and that another
+browser keeps its own allowance. Screenshots go to ignored
 `artifacts/`. Remove the test containers and volumes afterward:
 
 ```sh
