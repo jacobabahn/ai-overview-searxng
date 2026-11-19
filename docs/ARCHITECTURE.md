@@ -257,9 +257,10 @@ whole-turn deadline and exercise shared routing through configuration and select
 Test fragmented UTF-8/stream frames, normal completion and truncation, timeouts,
 token tampering/expiry, empty evidence, source sanitization, follow-up retrieval,
 and browser cancellation. Exercise the real SearXNG integration with a local
-mock provider before using live credentials. Live provider/model verification
-remains separately recorded; fixtures cannot establish account access or answer
-quality.
+mock provider before using live credentials. Fixtures cannot establish account
+access or answer quality; the manual live provider check in
+[Development](development.md#live-provider-check) sends one real request per
+hosted backend.
 
 ## Sources
 

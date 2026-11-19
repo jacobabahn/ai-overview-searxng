@@ -52,6 +52,53 @@ pulls the published SearXNG image, mounts `src/ai_overview` from the checkout
 into it, and the checks drive that instance with headless Chromium. No image
 is built, and no real search engine or model provider is contacted.
 
+## Live provider check
+
+The provider tests replay recorded responses, so a change on a provider's side
+(a renamed field, a new required header, a retired model) only shows up against
+the real API. `scripts/live_check.py` sends one short request to each hosted
+backend through the plugin's own code: it builds the profile the way
+`overview.yml` does, streams the answer through the provider adapter, and fails
+unless text arrives and the stream ends with a completion status. Where a check
+names a thinking level, a second request sends it the way a reader's Thinking
+choice would. Each request may produce at most 1,024 output tokens, and asking
+for one word keeps a passing request to a few dozen.
+
+| Check | Model | Thinking request | Key |
+|---|---|---|---|
+| `openai` | `gpt-5-nano` | Low | `OPENAI_API_KEY` |
+| `anthropic` | `claude-haiku-5-5` | Off | `ANTHROPIC_API_KEY` |
+| `gemini` | `gemini-2.5-flash-lite` | Off | `GEMINI_API_KEY` |
+| `openrouter` | `meta-llama/llama-3.1-8b-instruct` | none | `OPENROUTER_API_KEY` |
+| `opencode_go-chat` | `deepseek-v4.1-flash` | Off | `OPENCODE_GO_API_KEY` |
+| `opencode_go-responses` | `gpt-6-luna` | Low | `OPENCODE_GO_API_KEY` |
+| `opencode_go-anthropic` | `claude-haiku-5-5` | Off | `OPENCODE_GO_API_KEY` |
+
+The models are the cheapest small ones on each backend as of November 2026. When
+one is retired, the check fails; change its model in the `CHECKS` table at the
+top of the script. OpenRouter has no thinking request, because the chat
+protocol's thinking fields follow DeepSeek's API, not an OpenRouter parameter.
+
+Run it locally with any of the keys set. A check whose key is unset or empty is
+skipped, so with no keys it skips everything and exits 0:
+
+```sh
+OPENAI_API_KEY=... uv run python scripts/live_check.py          # every check with a key
+uv run python scripts/live_check.py gemini opencode_go-chat     # only these checks
+```
+
+A failure prints the error the plugin would show, followed by the provider's
+own reason in parentheses when it sent one.
+
+In GitHub, the **Live providers** workflow (`.github/workflows/live-providers.yml`)
+runs the script. Each run is billed to your keys, so it never runs on push, pull
+request, or a schedule, and `make check` doesn't call it; start it from the
+Actions tab with **Run workflow**, optionally listing check names. Add a
+repository secret (Settings → Secrets and variables → Actions) for each backend
+you want covered: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+`OPENROUTER_API_KEY`, and `OPENCODE_GO_API_KEY`. A backend without its secret is
+skipped with a notice. The run's summary page lists each check's result.
+
 ## Packaging and CI
 
 ```sh
@@ -61,7 +108,8 @@ uv build
 The wheel includes browser assets and templates. Build output goes to ignored
 `dist/`. GitHub Actions runs linting, formatting, type checking, Python tests,
 JavaScript tests, package builds, and the Docker/browser integration checks
-described above. Live provider calls are not part of CI.
+described above. Live provider calls run only in the manual
+[live provider check](#live-provider-check).
 
 Provider fixture tests cover backend request construction and streaming parsers;
 they do not establish live provider compatibility or answer quality. When
