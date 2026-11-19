@@ -124,20 +124,20 @@ def register(
                         "invalid_request", "Enter a question under 2,000 characters."
                     )
                 question = question.strip()
-            # Cached answers cost nothing, so they bypass the concurrency limit.
+            # Cached answers cost nothing, so they bypass the concurrency and request limits.
             hit = service.replay(state, question, client, fresh)
         except OverviewError as error:
             return _error_response(error, 403 if error.code == "invalid_state" else 400)
         if hit:
             return _stream_response(sse_event(event) for event in hit)
-        if not slots.acquire(blocking=False):
-            return _error_response(
-                OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
-            )
         reader, known = "", True
         if service.limiter:
             reader, known = service.limiter.reader(
                 request.cookies.get(READER_COOKIE), request.remote_addr
+            )
+        if not slots.acquire(blocking=False):
+            return _error_response(
+                OverviewError("busy", "AI Summary is busy. Try again shortly."), 429
             )
         lease = Lock()
 
@@ -194,7 +194,8 @@ def render_panel(service: GenerationService, state: Conversation) -> Markup:
     profile = service.config.profiles[state.profile]
     limiter = service.limiter
     if limiter and limiter.per_reader:
-        if not limiter.reader(request.cookies.get(READER_COOKIE), None)[1]:
+        _, known = limiter.reader(request.cookies.get(READER_COOKIE), request.remote_addr)
+        if not known:
             # Issued with the results page, so even the first overview counts per browser.
             @after_this_request
             def issue(response: Response) -> Response:
